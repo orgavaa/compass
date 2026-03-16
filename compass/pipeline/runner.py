@@ -528,7 +528,11 @@ class COMPASSPipeline:
             if hasattr(self.ml_scorer, '_encode_context'):
                 # CompassMlScorer: batch encode + predict
                 contexts = [self.ml_scorer._encode_context(sc.candidate) for sc in all_sc]
-                rnafm_embs = [self.ml_scorer._get_rnafm_embedding(sc.candidate) for sc in all_sc]
+                # Batched RNA-FM: one forward pass for all candidates instead of N sequential calls
+                if hasattr(self.ml_scorer, '_compute_rnafm_batch'):
+                    rnafm_embs = self.ml_scorer._compute_rnafm_batch([sc.candidate for sc in all_sc])
+                else:
+                    rnafm_embs = [self.ml_scorer._get_rnafm_embedding(sc.candidate) for sc in all_sc]
                 raw_preds = self.ml_scorer._predict_batch(contexts, rnafm_embs)
 
                 # Collect 128-dim RLPA embeddings for UMAP visualization

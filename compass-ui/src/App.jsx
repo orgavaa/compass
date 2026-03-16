@@ -304,6 +304,28 @@ const MODULE_NAME_MAP = {
   "Panel Assembly": 11, "Export": 12, "Complete": 12, "Serializing Results": 12,
 };
 
+// Progress-to-step mapping: uses numeric progress value as fallback
+// when current_module string lookup fails
+const PROGRESS_TO_STEP = [
+  [0.95, 12], [0.85, 11], [0.75, 10], [0.70, 9], [0.60, 8],
+  [0.50, 7], [0.40, 6], [0.30, 5], [0.25, 4], [0.20, 3],
+  [0.15, 2], [0.10, 1], [0.05, 0], [0.02, 0],
+];
+function resolveStep(data) {
+  // Try module name first
+  if (data.current_module) {
+    const idx = MODULE_NAME_MAP[data.current_module];
+    if (idx !== undefined) return idx;
+  }
+  // Fallback: derive step from numeric progress
+  if (typeof data.progress === "number") {
+    for (const [threshold, step] of PROGRESS_TO_STEP) {
+      if (data.progress >= threshold) return step;
+    }
+  }
+  return 0;
+}
+
 /* Scoring feature weights — matches compass/core/constants.py HEURISTIC_WEIGHTS exactly */
 const SCORING_FEATURES = [
   { name: "Seed Position", key: "seed_position", weight: 0.35, desc: "Positions 1–8 (PAM-proximal) perfect match penalty. Mismatches in seed dramatically reduce cleavage.", source: "Kim et al. 2017" },
@@ -1026,6 +1048,7 @@ const HomePage = ({ goTo, connected }) => {
   const [pipeJobId, setPipeJobId] = useState(null);
   const [pipeStep, setPipeStep] = useState(0);
   const [pipeDone, setPipeDone] = useState(false);
+  const [pipeQueued, setPipeQueued] = useState(false);
   const [pipeStats, setPipeStats] = useState([]);
   const [pipeElapsed, setPipeElapsed] = useState(0);
   const [showLog, setShowLog] = useState(false);
@@ -1095,6 +1118,7 @@ const HomePage = ({ goTo, connected }) => {
     setPipeJobId(jobId);
     setPipeStep(0);
     setPipeDone(false);
+    setPipeQueued(false);
     setPipeStats([]);
     setPipeElapsed(0);
     prevPipeStep.current = -1;
@@ -1113,10 +1137,7 @@ const HomePage = ({ goTo, connected }) => {
       try {
         const ws = connectJobWS(jobId,
           (msg) => {
-            if (msg.current_module) {
-              const idx = MODULE_NAME_MAP[msg.current_module];
-              if (idx !== undefined) setPipeStep(idx);
-            }
+            setPipeStep(prev => Math.max(prev, resolveStep(msg)));
             if (msg.status === "complete" || msg.status === "completed") {
               finishInlinePipeline(jobId);
             }
@@ -1133,8 +1154,9 @@ const HomePage = ({ goTo, connected }) => {
       pipePollRef.current = setInterval(async () => {
         const { data } = await getJob(jobId);
         if (!data) return;
-        const idx = MODULE_NAME_MAP[data.current_module] ?? 0;
-        setPipeStep(idx);
+        if (data.status === "pending") { setPipeQueued(true); return; }
+        if (pipeQueued) setPipeQueued(false);
+        setPipeStep(prev => Math.max(prev, resolveStep(data)));
         if (data.status === "complete" || data.status === "completed") {
           finishInlinePipeline(jobId);
         }
@@ -1197,7 +1219,7 @@ const HomePage = ({ goTo, connected }) => {
           ...m,
           name: "Compass-ML Scoring",
           execDesc: "Compass-ML (CNN + RNA-FM + RLPA) inference for efficiency and discrimination scoring",
-          estSec: 900,
+          estSec: 180,
           substeps: [
             "Loading Compass-ML checkpoint (235K params, CNN + PAM + RNA-FM + RLPA)",
             "Downloading RNA-FM weights from HuggingFace (~1.1 GB)",
@@ -1596,8 +1618,19 @@ const HomePage = ({ goTo, connected }) => {
             borderRadius: "4px",
             marginBottom: "24px", overflow: "hidden",
           }}>
+            {/* Queued state — waiting for previous run */}
+            {!pipeDone && pipeQueued && (
+              <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+                  <circle cx="8" cy="8" r="6" fill="none" stroke={T.border} strokeWidth="2" />
+                  <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke={T.textTer} strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <span style={{ fontSize: "13px", color: T.textSec }}>Queued — waiting for previous run to complete</span>
+                <span style={{ fontFamily: MONO, fontSize: "12px", color: T.textTer, marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{fmtElapsed(pipeElapsed)}</span>
+              </div>
+            )}
             {/* Running state — continuous progress bar + current module + collapsible timeline */}
-            {!pipeDone && (() => {
+            {!pipeDone && !pipeQueued && (() => {
               const stepEstSec = activeModule.estSec || 10;
               const stepElapsed = (Date.now() - pipeStepStartRef.current) / 1000;
               const subs = activeModule.substeps || [activeModule.execDesc];

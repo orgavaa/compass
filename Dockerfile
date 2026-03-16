@@ -73,6 +73,11 @@ RUN mkdir -p results/api results/panels results/validation
 ENV MALLOC_TRIM_THRESHOLD_=0
 ENV PYTORCH_NO_CUDA_MEMORY_CACHING=1
 
+# PyTorch CPU threading — use all available vCPUs for RNA-FM inference
+ENV OMP_NUM_THREADS=8
+ENV MKL_NUM_THREADS=8
+ENV TORCH_NUM_THREADS=8
+
 # Railway sets $PORT dynamically via env var
 ENV PORT=8000
 EXPOSE 8000
