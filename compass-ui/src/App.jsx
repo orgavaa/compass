@@ -1183,9 +1183,11 @@ const HomePage = ({ goTo, connected }) => {
         pipeWsRef.current = ws;
       } catch { /* ignore */ }
       // Polling is the reliable path; always run it
+      let pollFailCount = 0;
       pipePollRef.current = setInterval(async () => {
         const { data } = await getJob(jobId);
-        if (!data) return;
+        if (!data) { pollFailCount++; if (pollFailCount > 5) { clearInterval(pipePollRef.current); setError("Job not found (server may have restarted)"); } return; }
+        pollFailCount = 0;
         if (data.status === "pending") { setPipeQueued(true); return; }
         if (pipeQueued) setPipeQueued(false);
         setPipeStep(prev => Math.max(prev, resolveStep(data)));

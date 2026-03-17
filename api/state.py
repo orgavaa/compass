@@ -275,11 +275,25 @@ class AppState:
                     )
                 config_kwargs["scoring"] = ScoringConfig(**scoring_kwargs)
 
-            config = PipelineConfig(**config_kwargs)
-
             # Pre-warm model cache (blocks only the very first run)
             _warm_model_cache()
 
+            # When models are cached, override scoring config to skip
+            # redundant disk loading inside COMPASSPipeline.__init__.
+            # The scorer will initialise with model=None, then we inject
+            # the cached torch model + RNA-FM cache afterwards.
+            if _model_cache_ready:
+                from compass.core.config import ScoringConfig
+                skip_scoring = ScoringConfig(
+                    scorer="compass_ml",
+                    compass_ml_weights=Path("/dev/null/skip"),  # non-existent → skip load
+                    rnafm_cache_dir=None,  # skip RNA-FM cache load
+                    compass_ml_use_rlpa=True,
+                    compass_ml_use_rnafm=True,
+                )
+                config_kwargs["scoring"] = skip_scoring
+
+            config = PipelineConfig(**config_kwargs)
             pipeline = COMPASSPipeline(config)
 
             # Inject pre-loaded model weights into the pipeline's scorers.
