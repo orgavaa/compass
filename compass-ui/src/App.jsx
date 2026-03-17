@@ -4976,7 +4976,17 @@ const DiscriminationTab = ({ results }) => {
                           <span style={{ fontFamily: MONO, fontWeight: 600 }}>{d.terminal_mismatch || "N/A"}</span>
                           {d.terminal_mismatch && (
                             <span style={{ color: T.textSec, marginLeft: "4px" }}>
-                              ({d.block_class === "none" ? "Watson-Crick pair, no blocking" : d.block_class === "strong" ? "purine\u00B7purine clash, strong steric block" : "pyrimidine mismatch, moderate block"})
+                              ({d.block_class === "none" ? "Watson-Crick pair, no blocking"
+                                : (() => {
+                                  const mm = (d.terminal_mismatch || "").split(":");
+                                  const purines = new Set(["A", "G"]);
+                                  const b0 = mm[0] || "", b1 = mm[1] || "";
+                                  const bothPurine = purines.has(b0) && purines.has(b1);
+                                  const isWobble = (b0 === "G" && b1 === "T") || (b0 === "T" && b1 === "G") || (b0 === "U" && b1 === "G") || (b0 === "G" && b1 === "U");
+                                  const label = bothPurine ? "purine\u00B7purine clash" : isWobble ? "wobble pair" : b0 === b1 ? "homo-mismatch" : "transversion";
+                                  const strength = d.block_class === "strong" ? "strong steric block" : d.block_class === "moderate" ? "moderate block" : "weak block";
+                                  return `${label}, ${strength}`;
+                                })()})
                             </span>
                           )}
                           <span style={{ margin: "0 8px", color: T.borderLight }}>{"\u2502"}</span>
@@ -5040,7 +5050,7 @@ const PrimersTab = ({ results }) => {
           <div style={{ fontSize: "14px", fontWeight: 600, color: T.primaryDark, fontFamily: HEADING, marginBottom: "4px" }}>Recombinase Polymerase Amplification (RPA)</div>
           <p style={{ fontSize: "13px", color: T.primaryDark, lineHeight: 1.6, margin: 0, opacity: 0.85 }}>
             RPA is an isothermal amplification method (37°C) that replaces PCR thermocycling. Each crRNA target needs a pair of
-            30–35 nt primers flanking an 80–120 bp amplicon containing the crRNA binding site. The amplified product is then
+            25–35 nt primers flanking an 80–120 bp amplicon containing the crRNA binding site. The amplified product is then
             detected by Cas12a trans-cleavage of MB-ssDNA reporters on the electrochemical platform (SWV signal decrease on LIG-E (cellulose-derived) electrodes).
           </p>
           <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "10px", padding: "8px 12px", background: "rgba(255,255,255,0.5)", borderRadius: "4px", border: `1px solid ${T.primary}22` }}>
@@ -5770,11 +5780,6 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
         );
       })()}
 
-      {/* ═══════════ SECTION 5b: Panel Cross-Reactivity Analysis ═══════════ */}
-      <CollapsibleSection title="Panel Cross-Reactivity Analysis" defaultOpen={false} badge={{ text: `${MOCK_CROSS_REACTIVITY.same_gene_pairs.length} pairs`, bg: "#FEF3C720", color: "#D97706" }}>
-        <CrossReactivityMatrix />
-      </CollapsibleSection>
-
       {/* ═══════════ SECTION 6: In Situ RNP Formation Kinetics ═══════════ */}
       <CollapsibleSection title="In Situ RNP Formation Kinetics" defaultOpen={false} badge={{ text: kinetics.totals?.total_electrode || "30\u201350 min", bg: "#22c55e20", color: "#22c55e" }}>
         <div style={{ padding: "0", marginBottom: "24px" }}>
@@ -6005,11 +6010,6 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
                 <strong style={{ color: T.text }}>{echemCandidateData.label}</strong>
                 {" \u00b7 "}{"\u0394"}I% = <span style={{ fontWeight: 600, color: EC.purple }}>{echemMeta.deltaI}%</span>
                 {" \u00b7 "}{echemArch === "C" ? (Math.abs(echemMeta.peakBase) * 1000).toFixed(1) : Math.abs(echemMeta.peakBase).toFixed(3)} {echemArch === "C" ? "nA" : "\u03bcA"} {"\u2192"} {echemArch === "C" ? (Math.abs(echemMeta.peakAfter) * 1000).toFixed(1) : Math.abs(echemMeta.peakAfter).toFixed(3)} {echemArch === "C" ? "nA" : "\u03bcA"}
-                {echemCandidateData.discrimination <= 2.0 && echemCandidateData.discrimination < 900 && (
-                  <div style={{ marginTop: "4px", padding: "3px 8px", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "3px", fontSize: "9px", color: "#1D4ED8", lineHeight: 1.5, fontFamily: FONT }}>
-                    D = {echemCandidateData.discrimination.toFixed(1)}{"\u00d7"} - WT allele {"\u0394"}I% {"\u2248"} MUT {"\u0394"}I% (S_eff_WT = {(echemCandidateData.efficiency / echemCandidateData.discrimination).toFixed(3)}). Clinical discrimination relies entirely on AS-RPA primer selectivity, not crRNA alone.
-                  </div>
-                )}
               </div>
               <div style={{ width: "100%", height: 280 }}>
                 {(() => {
@@ -6170,8 +6170,11 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
                   ? `Moderate signal reduction (${"\u0394"}I = ${echemMeta.deltaI}%). The ${echemCandidateData.label} crRNA generates a detectable but sub-optimal peak shift at ${echemTime} min. Extending incubation time or increasing k_trans via electrode surface optimization would improve signal-to-noise.`
                   : `Weak signal reduction (${"\u0394"}I = ${echemMeta.deltaI}%). At ${echemTime} min, the trans-cleavage signal for ${echemCandidateData.label} is near the detection limit. Consider increasing reporter density, incubation time, or optimizing surface chemistry to enhance k_trans.`
                 }
-                {echemCandidateData.discrimination <= 2.0 && echemCandidateData.discrimination < 900 &&
-                  ` Note: D = ${echemCandidateData.discrimination.toFixed(1)}\u00d7 indicates poor crRNA-level discrimination. Allelic specificity depends on AS-RPA primer selectivity.`
+                {echemCandidateData.isProximity
+                  ? ` This is a Proximity candidate: allelic discrimination comes from AS-RPA primers (crRNA D = ${echemCandidateData.discrimination.toFixed(1)}\u00d7 is not the operative discrimination mechanism).`
+                  : echemCandidateData.discrimination <= 2.0 && echemCandidateData.discrimination < 900
+                  ? ` Note: D = ${echemCandidateData.discrimination.toFixed(1)}\u00d7 indicates poor crRNA-level discrimination. Allelic specificity depends on AS-RPA primer selectivity.`
+                  : ""
                 }
               </div>
             </div>
@@ -6297,11 +6300,13 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
                   <span>WT: <strong style={{ color: EC.pink }}>{echemArch === "C" ? (Math.abs(echemDiscOverlay.peakWt) * 1000).toFixed(1) : Math.abs(echemDiscOverlay.peakWt).toFixed(3)} {echemArch === "C" ? "nA" : "\u03bcA"}</strong> ({"\u0394"}I={echemDiscOverlay.diWt}%)</span>
                 </div>
                 <div>
-                  Disc: <strong style={{ color: echemDiscOverlay.measuredDisc < 1 ? "#ef4444" : echemDiscOverlay.measuredDisc < 2 ? "#f59e0b" : EC.purple }}>{echemDiscOverlay.measuredDisc === Infinity ? "\u221e" : `${echemDiscOverlay.measuredDisc}\u00d7`}</strong>
-                  <span style={{ color: T.textTer }}> (COMPASS: {echemDiscOverlay.narsilDisc >= 900 ? "\u221e" : `${echemDiscOverlay.narsilDisc}\u00d7`})</span>
+                  {echemCandidateData.isProximity
+                    ? <><strong style={{ color: EC.purple }}>AS-RPA</strong><span style={{ color: T.textTer }}> (crRNA: {echemDiscOverlay.narsilDisc}\u00d7, not used)</span></>
+                    : <><strong style={{ color: echemDiscOverlay.measuredDisc < 1 ? "#ef4444" : echemDiscOverlay.measuredDisc < 2 ? "#f59e0b" : EC.purple }}>{echemDiscOverlay.measuredDisc === Infinity ? "\u221e" : `${echemDiscOverlay.measuredDisc}\u00d7`}</strong><span style={{ color: T.textTer }}> (COMPASS: {echemDiscOverlay.narsilDisc >= 900 ? "\u221e" : `${echemDiscOverlay.narsilDisc}\u00d7`})</span></>
+                  }
                 </div>
-                {echemDiscOverlay.narsilDisc < 1 && <div style={{ color: "#ef4444", fontWeight: 600 }}>{"\u26a0"} D {"<"} 1: WT activates more than MUT</div>}
-                {echemDiscOverlay.measuredDisc < 2 && echemDiscOverlay.measuredDisc !== Infinity && echemDiscOverlay.narsilDisc >= 1 && <div style={{ color: "#f59e0b", fontWeight: 600 }}>{"\u26a0"} poor discrimination</div>}
+                {!echemCandidateData.isProximity && echemDiscOverlay.narsilDisc < 1 && <div style={{ color: "#ef4444", fontWeight: 600 }}>{"\u26a0"} D {"<"} 1: WT activates more than MUT</div>}
+                {!echemCandidateData.isProximity && echemDiscOverlay.measuredDisc < 2 && echemDiscOverlay.measuredDisc !== Infinity && echemDiscOverlay.narsilDisc >= 1 && <div style={{ color: "#f59e0b", fontWeight: 600 }}>{"\u26a0"} poor discrimination</div>}
               </div>
               <div style={{ width: "100%", height: 280 }}>
                 {(() => {
@@ -6429,7 +6434,9 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
               {/* Interpretation block; Panel C */}
               <div style={{ marginTop: "8px", padding: "10px 14px", borderRadius: "4px", background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "11px", color: "#1D4ED8", lineHeight: 1.6 }}>
                 <strong style={{ color: "#1D4ED8" }}>Interpretation:</strong>{" "}
-                {echemDiscOverlay.measuredDisc >= 3
+                {echemCandidateData.isProximity
+                  ? `Proximity candidate: allelic discrimination is provided by AS-RPA primers, not crRNA mismatch intolerance. The WT allele is not amplified (blocked at the primer level), so no WT signal reaches the electrode. crRNA-level discrimination (D = ${echemDiscOverlay.narsilDisc}\u00d7) is not relevant for this detection strategy. The voltammogram shows baseline vs MUT-only cleavage.`
+                  : echemDiscOverlay.measuredDisc >= 3
                   ? `Diagnostic-grade allelic discrimination (D = ${echemDiscOverlay.measuredDisc === Infinity ? "\u221e" : echemDiscOverlay.measuredDisc + "\u00d7"}). The voltammetric \u0394I% difference between MUT and WT alleles is clearly resolvable, enabling reliable genotyping from electrochemical signal alone.`
                   : echemDiscOverlay.measuredDisc >= 1.5
                   ? `Moderate allelic discrimination (D = ${echemDiscOverlay.measuredDisc}\u00d7). The MUT/WT peak height difference is detectable but marginal. AS-RPA primer specificity provides additional discrimination at the amplification stage.`
@@ -6479,7 +6486,7 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
                       <td style={{ padding: "8px 12px", textAlign: "center" }}>
                         <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 600, background: d.block_class === "strong" ? "#ECFDF5" : d.block_class === "moderate" ? "#FFFBEB" : "#FEF2F2", color: d.block_class === "strong" ? T.success : d.block_class === "moderate" ? "#D97706" : T.danger, textTransform: "lowercase" }}>{d.block_class}</span>
                       </td>
-                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: FONT, fontSize: "11px" }}>{(d.estimated_specificity * 100).toFixed(1)}%</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: FONT, fontSize: "11px" }}>{Math.round(d.estimated_specificity * 100)}%</td>
                     </tr>
                   );
                 })}
@@ -6891,7 +6898,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
           <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
             {[
               { label: "Sensitivity", value: `${(diagnostics.sensitivity * 100).toFixed(1)}%`, color: diagnostics.sensitivity >= 0.85 ? T.success : diagnostics.sensitivity >= 0.7 ? T.warning : T.danger, icon: TrendingUp },
-              { label: "Specificity", value: `${(diagnostics.specificity * 100).toFixed(1)}%`, color: diagnostics.specificity >= 0.98 ? T.success : diagnostics.specificity >= 0.85 ? "#d97706" : T.danger, icon: Shield },
+              { label: "Specificity", value: `${Math.round(diagnostics.specificity * 100)}%`, color: diagnostics.specificity >= 0.98 ? T.success : diagnostics.specificity >= 0.85 ? "#d97706" : T.danger, icon: Shield },
               { label: "Coverage", value: `${diagnostics.coverage || diagnostics.assay_ready}/${diagnostics.total_targets}`, color: T.primary, icon: Target },
               { label: "Assay-Ready", value: diagnostics.assay_ready, color: T.purple, icon: CheckCircle },
             ].map(card => (
@@ -7148,7 +7155,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
                         <td style={{ padding: "10px 14px" }}>
                           {data.specificity != null ? (
                             <div>
-                              <span style={{ fontFamily: FONT, fontWeight: 600, fontSize: "12px", color: data.specificity >= 0.98 ? T.success : data.specificity >= 0.90 ? T.warning : T.textTer }}>{(data.specificity * 100).toFixed(1)}%</span>
+                              <span style={{ fontFamily: FONT, fontWeight: 600, fontSize: "12px", color: data.specificity >= 0.98 ? T.success : data.specificity >= 0.90 ? T.warning : T.textTer }}>{Math.round(data.specificity * 100)}%</span>
                               {data.n_excluded_specificity > 0 && <div style={{ fontSize: "9px", color: T.textTer, marginTop: "2px" }}>{data.n_excluded_specificity} excluded</div>}
                               {/* Specificity decomposition */}
                               {(() => {

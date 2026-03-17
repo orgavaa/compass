@@ -35,10 +35,15 @@ class EmbeddingCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.index: dict[str, int] = {}
         self._batch_cache: dict[int, dict[str, torch.Tensor]] = {}
+        self._npy_sequences: set[str] = set()  # .npy file-based cache
         self._load_index()
+        self._scan_npy_files()
 
     def get(self, sequence: str) -> torch.Tensor | None:
         """Retrieve cached embedding for a sequence.
+
+        Checks batched .pt index first, then falls back to individual
+        .npy files (legacy format from pre-compute scripts).
 
         Args:
             sequence: RNA sequence (crRNA spacer, e.g. "AUGCCG...").
@@ -46,18 +51,34 @@ class EmbeddingCache:
         Returns:
             (seq_len, 640) tensor or None if not cached.
         """
+        # 1. Try batched .pt format (fast, indexed)
         seq_hash = self._hash(sequence)
-        if seq_hash not in self.index:
-            return None
-        file_idx = self.index[seq_hash]
+        if seq_hash in self.index:
+            file_idx = self.index[seq_hash]
+            if file_idx not in self._batch_cache:
+                path = self.cache_dir / f"batch_{file_idx}.pt"
+                self._batch_cache[file_idx] = torch.load(
+                    path, map_location="cpu", weights_only=True,
+                )
+            return self._batch_cache[file_idx][seq_hash]
 
-        # In-memory LRU for hot batches during training
-        if file_idx not in self._batch_cache:
-            path = self.cache_dir / f"batch_{file_idx}.pt"
-            self._batch_cache[file_idx] = torch.load(
-                path, map_location="cpu", weights_only=True,
-            )
-        return self._batch_cache[file_idx][seq_hash]
+        # 2. Try .npy file (legacy format: {sequence}.npy)
+        seq_upper = sequence.upper().replace("T", "U")  # DNA -> RNA
+        npy_path = self.cache_dir / f"{seq_upper}.npy"
+        if npy_path.exists():
+            import numpy as np
+            arr = np.load(npy_path)
+            return torch.from_numpy(arr).float()
+
+        # Also try DNA form
+        seq_dna = sequence.upper()
+        npy_path_dna = self.cache_dir / f"{seq_dna}.npy"
+        if npy_path_dna.exists():
+            import numpy as np
+            arr = np.load(npy_path_dna)
+            return torch.from_numpy(arr).float()
+
+        return None
 
     def get_or_zeros(self, sequence: str, seq_len: int = 20, dim: int = 640) -> torch.Tensor:
         """Get cached embedding, or return zeros if not cached.
@@ -88,10 +109,13 @@ class EmbeddingCache:
         self._save_index()
 
     def has(self, sequence: str) -> bool:
-        return self._hash(sequence) in self.index
+        if self._hash(sequence) in self.index:
+            return True
+        seq_upper = sequence.upper().replace("T", "U")
+        return seq_upper in self._npy_sequences or sequence.upper() in self._npy_sequences
 
     def __len__(self) -> int:
-        return len(self.index)
+        return len(self.index) + len(self._npy_sequences)
 
     def _hash(self, seq: str) -> str:
         return hashlib.sha256(seq.encode()).hexdigest()[:16]
@@ -103,6 +127,11 @@ class EmbeddingCache:
 
     def _save_index(self) -> None:
         torch.save(self.index, self.cache_dir / "index.pt")
+
+    def _scan_npy_files(self) -> None:
+        """Scan for legacy .npy embedding files (one file per sequence)."""
+        npy_files = list(self.cache_dir.glob("*.npy"))
+        self._npy_sequences = {f.stem for f in npy_files}
 
     def clear_memory_cache(self) -> None:
         """Free in-memory batch cache (call between epochs if memory-tight)."""
