@@ -299,7 +299,11 @@ const MODULES = [
 const MODULE_NAME_MAP = {
   "Initializing": 0, "Target Resolution": 0, "PAM Scanning": 1,
   "Candidate Filtering": 2, "Off-Target Screening": 3, "Heuristic Scoring": 4,
-  "Mismatch Pairs": 5, "SM Enhancement": 6, "Discrimination Scoring": 7,
+  "Compass-ML: Encoding": 4, "Compass-ML: Encoding targets": 4,
+  "Compass-ML: RNA-FM": 4, "Compass-ML: RNA-FM embeddings": 4,
+  "Compass-ML: CNN inference": 4, "Compass-ML: Calibration": 4,
+  "Mismatch Pairs": 5, "SM Enhancement": 6, "SM Enhancement complete": 6,
+  "Discrimination Scoring": 7, "Discrimination complete": 7,
   "Multiplex Optimization": 8, "RPA Primer Design": 9, "Co-Selection Validation": 10,
   "Panel Assembly": 11, "Export": 12, "Complete": 12, "Serializing Results": 12,
 };
@@ -307,8 +311,8 @@ const MODULE_NAME_MAP = {
 // Progress-to-step mapping: uses numeric progress value as fallback
 // when current_module string lookup fails
 const PROGRESS_TO_STEP = [
-  [0.95, 12], [0.85, 11], [0.75, 10], [0.70, 9], [0.60, 8],
-  [0.50, 7], [0.40, 6], [0.30, 5], [0.25, 4], [0.20, 3],
+  [0.95, 12], [0.90, 11], [0.85, 10], [0.78, 9], [0.70, 8],
+  [0.65, 7], [0.55, 6], [0.45, 5], [0.40, 4], [0.20, 3],
   [0.15, 2], [0.10, 1], [0.05, 0], [0.02, 0],
 ];
 function resolveStep(data) {
