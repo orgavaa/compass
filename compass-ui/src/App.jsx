@@ -5265,10 +5265,11 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
 
   const kinetics = poolData?.kinetics || {
     phases: [
-      { phase: "crRNA rehydration", solution_bound: "N/A", on_electrode: "2\u20135 min", description: "Dried crRNA dissolves from LIG surface into assay buffer", is_bottleneck: false },
-      { phase: "RNP formation", solution_bound: "0.5\u20131 min", on_electrode: "2\u20135 min", description: "Cas12a + crRNA \u2192 active RNP (in situ complexation)", is_bottleneck: false },
-      { phase: "Target recognition", solution_bound: "~10 sec", on_electrode: "1\u20133 min", description: "RNP binds cognate amplicon, R-loop formation, cis-cleavage activation", is_bottleneck: false },
-      { phase: "Surface trans-cleavage", solution_bound: "~5 min", on_electrode: "10\u201320 min", description: "Activated Cas12a cleaves MB-ssDNA reporters tethered to LIG electrode", is_bottleneck: true },
+      { phase: "RPA amplification", solution_bound: "15\u201320 min", on_electrode: "15\u201320 min", description: "Low-plex shared RPA in upstream chambers (2\u20133 chambers, 3\u20134 primer pairs each). Amplicons distributed to detection wells by capillary flow.", is_bottleneck: false },
+      { phase: "crRNA rehydration", solution_bound: "N/A", on_electrode: "2\u20135 min", description: "Amplicon reconstitutes dried crRNA + Cas12a in each detection well", is_bottleneck: false },
+      { phase: "RNP formation", solution_bound: "0.5\u20131 min", on_electrode: "2\u20135 min", description: "Cas12a + crRNA form active RNP (in situ complexation). Amplicons already present in excess (>10\u2079 copies post-RPA).", is_bottleneck: false },
+      { phase: "Target recognition + cis-cleavage", solution_bound: "~10 sec", on_electrode: "1\u20133 min", description: "RNP scans amplicons for PAM, R-loop forms, cis-cleavage activates trans-cleavage", is_bottleneck: false },
+      { phase: "Surface trans-cleavage", solution_bound: "~5 min", on_electrode: "10\u201320 min", description: "Activated Cas12a cleaves pyrene-NHS-tethered ssDNA-MB reporters on LIG-E WE", is_bottleneck: true },
     ],
     totals: {
       detection_solution: "~6\u20138 min", detection_electrode: "15\u201330 min",
@@ -5286,10 +5287,12 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
       { param: "MB-ssDNA probe density", value: "~10\u00b9\u2070\u201310\u00b9\u00b9 molecules/cm\u00b2", source: "Estimated for LIG", note: "Geometric density (estimated). Effective density is higher due to LIG-E porosity (3\u201310\u00d7 surface area). Directly affects signal magnitude and time-to-detection." },
     ],
     insights: [
-      { title: "Rate-limiting step", text: "Surface trans-cleavage of tethered MB-ssDNA reporters dominates detection time, not RNP formation or target recognition." },
-      { title: "In situ complexation", text: "Lesinski et al. 2024: reduces effective [RNP] during the first ~5 minutes by ~10-fold vs pre-complexed format. This prevents Cas12a from destroying target amplicons before detection begins." },
-      { title: "Experimental unknowns", text: "k_trans on LIG-tethered MB-ssDNA and crRNA rehydration kinetics have not been measured. These are key characterisation priorities." },
-      { title: "Capacitive background", text: "SWV simulation models Faradaic current only. Real LIG electrodes have capacitive (non-Faradaic) baseline from double-layer charging on high-surface-area graphene foam. Signal-to-noise ratio in practice depends on the Faradaic-to-capacitive current ratio." },
+      { title: "Rate-limiting step", text: "Surface trans-cleavage of pyrene-NHS-tethered ssDNA-MB reporters on LIG-E dominates detection time, not RNP formation or target recognition." },
+      { title: "Shared amplicon architecture", text: "Targets at the same gene locus (e.g. rpoB S531L/H526Y/D516V) share one RPA amplicon from a common primer pair. The amplicon is distributed to separate detection wells, each with a target-specific crRNA. This reduces the RPA multiplex while maintaining detection plex." },
+      { title: "In situ complexation", text: "Lesinski et al. 2024: dried Cas12a + crRNA reconstitute when amplicon solution arrives from upstream RPA chamber. RNP forms over ~15 min while amplicons are already in massive excess (>10\u2079 copies). No kinetic race between amplification and detection." },
+      { title: "Reporter tethering", text: "ssDNA-MB reporters anchored to LIG-E via pyrene-NHS (PBASE): pyrene \u03c0-\u03c0 stacks on graphene surface (~74 kJ/mol binding), NHS ester covalently couples to amine-modified ssDNA. Stable under SWV cycling." },
+      { title: "Experimental unknowns", text: "k_trans on LIG-tethered MB-ssDNA, crRNA rehydration kinetics, and capillary distribution uniformity across 14 wells have not been measured. These are key characterisation priorities." },
+      { title: "Capacitive background", text: "SWV simulation models Faradaic current only. Real LIG-E electrodes have capacitive (non-Faradaic) baseline from double-layer charging on high-surface-area graphene foam. Signal-to-noise ratio in practice depends on the Faradaic-to-capacitive current ratio." },
     ],
     target_ranking: [
       { target: "IS6110", efficiency: 0.95, is_weak: false },
@@ -5760,7 +5763,14 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
           <span style={{ fontSize: "13px", fontWeight: 600, color: T.primaryDark, fontFamily: HEADING }}>Multiplex Engineering</span>
         </div>
         <div style={{ fontSize: "13px", color: T.primaryDark, lineHeight: 1.6 }}>
-          Spatially-addressed 14-plex electrode array with per-pad crRNA, predicted electrochemical readout (SWV/DPV/CV), cross-reactivity analysis, and in situ RNP formation kinetics. Each detection zone is physically isolated by wax-printed hydrophobic barriers, enabling simultaneous detection of {drugs.length} drug resistance classes from a single blood sample.
+          {(() => {
+            const locusGroups = {};
+            results.forEach(r => { if (r.locusGroup) { if (!locusGroups[r.locusGroup]) locusGroups[r.locusGroup] = []; locusGroups[r.locusGroup].push(r.label); } });
+            const sharedLoci = Object.entries(locusGroups).filter(([, t]) => t.length > 1);
+            const uniquePairs = results.filter(r => r.hasPrimers).length - sharedLoci.reduce((s, [, t]) => s + t.length - 1, 0);
+            const nChambers = Math.ceil(uniquePairs / 4);
+            return `Low-plex shared RPA (${uniquePairs} primer pairs in ${nChambers} chambers) feeding ${results.length} spatially-isolated detection wells, each pre-loaded with target-specific crRNA + Cas12a. Amplicon distribution via capillary channels on cellulose. Each well contains a LIG working electrode with pyrene-NHS-tethered ssDNA-MB reporters. Shared CE + RE. SWV readout via multiplexed potentiostat. Detection of ${drugs.length} drug resistance classes from a single blood sample.`;
+          })()}
         </div>
       </div>
 
@@ -5912,7 +5922,7 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
               : echemArch === "B" ? "silver anodic stripping voltammetry (Suea-Ngam 2021)"
               : "surface-confined MB"
             }.</strong> {echemArch === "C"
-              ? "Peak shapes follow surface-confined redox theory for adsorbed redox couples."
+              ? "Peak shapes follow surface-confined redox theory for adsorbed redox couples. Reporters tethered via pyrene-NHS (PBASE) to LIG-E graphene surface."
               : echemArch === "A"
               ? "Peak shapes follow Nicholson-Shain theory for irreversible diffusion-controlled oxidation."
               : "Peak shapes follow anodic stripping voltammetry dissolution kinetics."
