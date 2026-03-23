@@ -5797,9 +5797,9 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
       </div>
 
       {/* ── Status banner ── */}
-      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "4px", padding: "10px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-        <CheckCircle size={14} color="#2563EB" strokeWidth={2} />
-        <span style={{ fontSize: "12px", fontWeight: 500, color: "#1D4ED8", fontFamily: FONT }}>Computational design complete - electrode characterisation pending</span>
+      <div style={{ background: "#FFFBEB", border: "1px solid #F59E0B44", borderRadius: "4px", padding: "10px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+        <AlertTriangle size={14} color="#D97706" strokeWidth={2} />
+        <span style={{ fontSize: "12px", fontWeight: 500, color: "#92400E", fontFamily: FONT }}>Electrochemical predictions below are exploratory. Absolute signal values depend on reporter chemistry, surface functionalization, and electrode-specific parameters that require experimental characterization. Curves will be calibrated once the reporter architecture is selected and validated on the LIG-E platform.</span>
       </div>
 
       {/* ═══════════ SECTION 0: 3D Interactive Chip Render ═══════════ */}
