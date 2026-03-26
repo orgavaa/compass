@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 _CONTEXT_LENGTH = 34
 _COMPASS_NET_DIR = Path(__file__).resolve().parent.parent.parent / "compass-net"
+
+# Ensure compass-net is on sys.path before any lazy imports inside methods.
+from compass.scoring._netpath import ensure_importable as _ensure_compass_net  # noqa: E402
+_ensure_compass_net()
 _WEIGHTS_DIR = Path(__file__).resolve().parent.parent / "weights"
 # Production default: diagnostic.pt (CNN+RNA-FM+RLPA, best M.tb generalisation)
 # phase1_v2 is CNN-only benchmark — collapses to 0.52 on GC-rich M.tb targets
@@ -339,9 +343,6 @@ class CompassMlScorer(Scorer):
         """Compute 3 thermodynamic features for a MUT/WT pair."""
         import torch
         try:
-            compass_ml_str = str(_COMPASS_NET_DIR)
-            if compass_ml_str not in sys.path:
-                sys.path.insert(0, compass_ml_str)
             from features.thermodynamic import RNA_DNA_NN, compute_hybrid_dg
 
             # Extract crRNA from candidate spacer
@@ -422,14 +423,11 @@ class CompassMlScorer(Scorer):
 
             # compass-net/ has a hyphen so can't be imported directly.
             # Register it as 'compass_ml' package in sys.modules.
-            compass_ml_str = str(_COMPASS_NET_DIR)
             if "compass_ml" not in sys.modules:
-                if compass_ml_str not in sys.path:
-                    sys.path.insert(0, compass_ml_str)
                 spec = importlib.util.spec_from_file_location(
                     "compass_ml",
                     str(_COMPASS_NET_DIR / "__init__.py"),
-                    submodule_search_locations=[compass_ml_str],
+                    submodule_search_locations=[str(_COMPASS_NET_DIR)],
                 )
                 mod = importlib.util.module_from_spec(spec)
                 sys.modules["compass_ml"] = mod
@@ -589,10 +587,6 @@ class CompassMlScorer(Scorer):
         """Load RNA-FM embedding cache."""
         try:
             # Import EmbeddingCache from compass-net's data subpackage
-            compass_ml_str = str(_COMPASS_NET_DIR)
-            if compass_ml_str not in sys.path:
-                sys.path.insert(0, compass_ml_str)
-
             # Direct file import to avoid subpackage registration issues
             import importlib.util
             cache_module_path = _COMPASS_NET_DIR / "data" / "embedding_cache.py"

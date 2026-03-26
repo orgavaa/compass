@@ -693,7 +693,7 @@ class COMPASSPipeline:
                 "detail": (
                     f"{total_scored:,} candidates scored \u2014 "
                     f"Heuristic ({score_min:.3f}\u2013{score_max:.3f}) \u00b7 "
-                    f"SeqCNN calibrated T={cal_T_val:.1f} ({cal_min:.3f}\u2013{cal_max:.3f}) \u00b7 "
+                    f"{ml_name} calibrated T={cal_T_val:.1f} ({cal_min:.3f}\u2013{cal_max:.3f}) \u00b7 "
                     f"Ensemble \u03b1={cal_alpha_val:.2f} ({ens_min:.3f}\u2013{ens_max:.3f})"
                 ),
                 "breakdown": {
@@ -705,7 +705,7 @@ class COMPASSPipeline:
                     "ensemble_mean": round(ens_mean, 3),
                     "temperature": round(cal_T_val, 2),
                     "alpha": round(cal_alpha_val, 4),
-                    "model": "seq_cnn",
+                    "model": ml_name,
                     "val_rho": round(ml_rho, 4),
                     "val_rho_ensemble": round(ens_rho, 4),
                 },

@@ -22,6 +22,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+
+class _PipelineProgressHandler(logging.Handler):
+    """Attaches to compass.pipeline.runner's logger to track pipeline stages.
+
+    Uses the standard logging infrastructure instead of monkey-patching
+    logger.info. Each job gets its own handler added/removed around the
+    run_full() call, so concurrent jobs don't interfere.
+    """
+
+    def __init__(
+        self,
+        job: "PipelineJob",
+        state: "AppState",
+        stage_progress: dict[str, tuple[float, str]],
+    ) -> None:
+        super().__init__(level=logging.INFO)
+        self._job = job
+        self._state = state
+        self._stage_progress = stage_progress
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+            for key, (prog, mod) in self._stage_progress.items():
+                if key in msg:
+                    self._state._update_progress(self._job, prog, mod)
+                    break
+        except Exception:
+            self.handleError(record)
+
 from api.schemas import JobStatus, MutationInput, PipelineMode
 
 logger = logging.getLogger(__name__)
@@ -354,11 +384,11 @@ class AppState:
                 # Hook into pipeline stages via progress updates
                 self._update_progress(job, 0.10, "PAM Scanning")
 
-                # Patch logger to track progress
+                # Attach a progress handler to the pipeline runner's logger.
+                # Each job gets its own handler; concurrent jobs don't interfere.
                 import compass.pipeline.runner as runner_mod
-                original_info = runner_mod.logger.info
 
-                stage_progress = {
+                stage_progress: dict[str, tuple[float, str]] = {
                     "Module 3:": (0.10, "Candidate Filtering"),
                     "Module 4:": (0.15, "Off-Target Screening"),
                     "Module 5:": (0.20, "Heuristic Scoring"),
@@ -378,23 +408,14 @@ class AppState:
                     "PANEL COMPLETE": (0.95, "Export"),
                 }
 
-                def _tracking_info(msg: str, *args: Any, **kwargs: Any) -> None:
-                    try:
-                        formatted = msg % args if args else msg
-                        for key, (prog, mod) in stage_progress.items():
-                            if key in formatted:
-                                self._update_progress(job, prog, mod)
-                                break
-                    except Exception:
-                        pass
-                    original_info(msg, *args, **kwargs)
-
-                runner_mod.logger.info = _tracking_info  # type: ignore[assignment]
+                _progress_handler = _PipelineProgressHandler(job, self, stage_progress)
+                _runner_logger = logging.getLogger(runner_mod.logger.name)
+                _runner_logger.addHandler(_progress_handler)
 
                 try:
                     panel = pipeline.run_full(mutations)
                 finally:
-                    runner_mod.logger.info = original_info  # type: ignore[assignment]
+                    _runner_logger.removeHandler(_progress_handler)
 
                 self._update_progress(job, 0.95, "Serializing Results")
 

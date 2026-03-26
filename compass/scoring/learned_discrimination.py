@@ -54,13 +54,9 @@ from compass.scoring.discrimination import (
 
 logger = logging.getLogger(__name__)
 
-# Ensure compass-net is importable
-_COMPASS_NET_DIR = Path(__file__).resolve().parent.parent.parent / "compass-net"
-if str(_COMPASS_NET_DIR) not in sys.path:
-    sys.path.insert(0, str(_COMPASS_NET_DIR))
-_COMPASS_NET_DATA = _COMPASS_NET_DIR / "data"
-if str(_COMPASS_NET_DATA) not in sys.path:
-    sys.path.insert(0, str(_COMPASS_NET_DATA))
+# Ensure compass-net modules (features.thermodynamic, etc.) are importable.
+from compass.scoring._netpath import ensure_importable as _ensure_compass_net, _NET_DIR as _COMPASS_NET_DIR
+_ensure_compass_net()
 
 # DNA → RNA complement
 _DNA_TO_RNA = {"A": "U", "T": "A", "C": "G", "G": "C"}
@@ -127,9 +123,23 @@ class LearnedDiscriminationScorer(Scorer):
         try:
             import pickle
 
+            # Prefer the native-format JSON counterpart when available —
+            # it is version-portable across xgboost/Python upgrades.
+            # Run compass-net/scripts/migrate_disc_model_format.py to generate it.
+            json_path = self._model_path.with_suffix(".json")
+            if json_path.exists():
+                return self._try_load_json_model(json_path)
+
+            logger.warning(
+                "Loading discrimination model from pickle (%s). "
+                "Pickle is not forward-portable across xgboost/scikit-learn versions. "
+                "Run compass-net/scripts/migrate_disc_model_format.py to convert "
+                "to the stable XGBoost JSON format.",
+                self._model_path.name,
+            )
+
             # Pickle deserialization of local model checkpoint.
             # These files are shipped with the repo, not user-uploaded.
-            # For additional safety, restrict to known model classes.
             with open(self._model_path, "rb") as f:
                 checkpoint = pickle.load(f)
 
@@ -177,14 +187,43 @@ class LearnedDiscriminationScorer(Scorer):
             return False
 
     def _try_load_json_model(self, json_path: Path) -> bool:
-        """Load XGBoost model from JSON format (portable, no xgboost import needed for export)."""
+        """Load model from XGBoost native JSON format (version-portable).
+
+        XGBoost's native JSON format is stable across library versions,
+        unlike pickle. Use compass-net/scripts/migrate_disc_model_format.py
+        to convert existing .pkl checkpoints.
+        """
         try:
-            import json
-            with open(json_path) as f:
-                data = json.load(f)
-            logger.info("JSON model format not yet supported, using heuristic")
-            return False
-        except Exception:
+            import xgboost as xgb
+
+            booster = xgb.Booster()
+            booster.load_model(str(json_path))
+            self._model = booster
+            self._backend = "xgboost_json"
+            self._model_loaded = True
+
+            # Load accompanying feature metadata if present
+            import json as _json
+            meta_path = json_path.with_name(json_path.stem + "_meta.json")
+            n_feat = 15
+            if meta_path.exists():
+                with open(meta_path) as mf:
+                    meta = _json.load(mf)
+                n_feat = int(meta.get("n_features", 15))
+
+            from thermo_discrimination_features import (  # type: ignore[import]
+                compute_features_for_pair, FEATURE_NAMES, FEATURE_NAMES_V1,
+            )
+            self._feature_module = compute_features_for_pair
+            self._feature_names = FEATURE_NAMES if n_feat >= 18 else FEATURE_NAMES_V1
+
+            logger.info(
+                "Loaded discrimination model from XGBoost JSON %s (%d features)",
+                json_path, n_feat,
+            )
+            return True
+        except Exception as e:
+            logger.warning("Failed to load JSON discrimination model: %s", e)
             return False
 
     @property

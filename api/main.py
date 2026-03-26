@@ -5,6 +5,7 @@ Single entry point: uvicorn api.main:app --reload --port 8000
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     _state = AppState(results_dir="results/api")
     logger.info("COMPASS Platform starting — results at %s", _state.results_dir)
+    await _init_rate_limiter()
 
     # Wire state into route modules
     from api.routes import figures, pipeline, research, results
@@ -140,32 +142,76 @@ async def check_api_key(request: Request, call_next: object) -> Response:
     return await call_next(request)  # type: ignore[operator]
 
 
-# ── Rate limiter middleware ──
+# ── Rate limiter ──
+# In-memory mode is NOT safe for multi-worker/multi-process deployments —
+# each worker maintains an independent store so a client can make
+# N_workers × RATE_LIMIT requests per minute.
+# Set REDIS_URL in the environment to enable a process-safe Redis backend.
 _rate_store: dict[str, list[float]] = defaultdict(list)
+_rate_lock = asyncio.Lock()
+_rate_redis: Any = None  # redis.asyncio client when REDIS_URL is set
+
+
+async def _init_rate_limiter() -> None:
+    """Called from lifespan — try to connect to Redis, fall back to in-memory."""
+    global _rate_redis
+    redis_url = os.environ.get("REDIS_URL", "")
+    if redis_url:
+        try:
+            import redis.asyncio as aioredis  # type: ignore[import]
+            _rate_redis = aioredis.from_url(redis_url, decode_responses=True)
+            await _rate_redis.ping()
+            logger.info("Rate limiter: Redis backend active (%s)", redis_url)
+        except Exception as exc:
+            _rate_redis = None
+            logger.warning(
+                "Rate limiter: Redis unavailable (%s), falling back to "
+                "in-memory (not safe for multi-worker deployments).", exc,
+            )
+    else:
+        logger.warning(
+            "Rate limiter: in-memory mode (PID %d). "
+            "Set REDIS_URL for multi-worker safety.", os.getpid(),
+        )
+
+
+async def _is_rate_limited(client_ip: str) -> bool:
+    """Return True when the client has exceeded RATE_LIMIT requests/minute."""
+    if _rate_redis is not None:
+        key = f"compass:rl:{client_ip}"
+        now = time.time()
+        window_start = now - 60.0
+        pipe = _rate_redis.pipeline()
+        pipe.zremrangebyscore(key, 0, window_start)
+        pipe.zcard(key)
+        pipe.zadd(key, {str(now): now})
+        pipe.expire(key, 61)
+        results = await pipe.execute()
+        count: int = results[1]  # zcard before the new entry
+        return count >= RATE_LIMIT
+
+    # In-memory fallback — asyncio.Lock keeps it correct within a single process
+    async with _rate_lock:
+        now = time.time()
+        _rate_store[client_ip] = [t for t in _rate_store[client_ip] if now - t < 60]
+        if len(_rate_store[client_ip]) >= RATE_LIMIT:
+            return True
+        _rate_store[client_ip].append(now)
+        return False
 
 
 @app.middleware("http")
 async def rate_limit(request: Request, call_next: object) -> Response:
-    """Simple in-memory per-IP rate limiter."""
-    # Skip rate limiting for static files and websocket
+    """Per-IP rate limiter (Redis-backed when REDIS_URL is set, in-memory otherwise)."""
     if not request.url.path.startswith("/api"):
         return await call_next(request)  # type: ignore[operator]
 
     client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-
-    # Prune entries older than 60 seconds
-    _rate_store[client_ip] = [
-        t for t in _rate_store[client_ip] if now - t < 60
-    ]
-
-    if len(_rate_store[client_ip]) >= RATE_LIMIT:
+    if await _is_rate_limited(client_ip):
         return JSONResponse(
             status_code=429,
             content={"detail": "Rate limit exceeded. Try again in a minute."},
         )
-
-    _rate_store[client_ip].append(now)
     return await call_next(request)  # type: ignore[operator]
 
 # Include routers

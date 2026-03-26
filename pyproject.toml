@@ -58,6 +58,10 @@ api = [
     "python-multipart",
     "websockets>=12.0",
 ]
+api-redis = [
+    "compass[api]",
+    "redis>=5.0",
+]
 all = [
     "compass[ml,primers,structure,viz,api]",
 ]
