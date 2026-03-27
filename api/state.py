@@ -286,8 +286,24 @@ class AppState:
                 index_path = os.environ.get(f"{prefix}_INDEX_PATH", idx_default)
                 gff_path = os.environ.get(f"{prefix}_GFF_PATH", gff_default)
 
+            # Pre-flight check: ensure reference genome exists
+            fasta_p = Path(fasta_path)
+            if not fasta_p.exists():
+                _ORG_LABELS = {
+                    "mtb": "M. tuberculosis H37Rv",
+                    "ecoli": "E. coli K-12 MG1655",
+                    "saureus": "S. aureus NCTC 8325",
+                    "ngonorrhoeae": "N. gonorrhoeae FA 1090",
+                }
+                label = _ORG_LABELS.get(organism_id, organism_id)
+                raise FileNotFoundError(
+                    f"Reference genome not found for {label}: {fasta_p}. "
+                    f"Run 'python scripts/download_references.py' to download "
+                    f"all required reference genomes."
+                )
+
             ref_config = ReferenceConfig(
-                genome_fasta=Path(fasta_path),
+                genome_fasta=fasta_p,
                 genome_index=Path(index_path),
                 gff_annotation=Path(gff_path),
             )
@@ -481,5 +497,5 @@ class AppState:
         except Exception as e:
             job.status = JobStatus.FAILED
             job.completed_at = datetime.now(timezone.utc)
-            job.error = f"Pipeline failed: {type(e).__name__}"
+            job.error = f"Pipeline failed: {e}" if isinstance(e, FileNotFoundError) else f"Pipeline failed: {type(e).__name__}"
             logger.error("Job %s failed: %s\n%s", job_id, e, traceback.format_exc())

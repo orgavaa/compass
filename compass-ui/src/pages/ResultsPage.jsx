@@ -33,6 +33,13 @@ import ChipRender3D from "../ChipRender3D";
 
 const RISK_COLORS = { green: T.riskGreen, amber: T.riskAmber, red: T.riskRed };
 const RISK_BG = { green: T.riskGreenBg, amber: T.riskAmberBg, red: T.riskRedBg };
+
+// Species control gene per organism — used to identify non-resistance control targets
+const SP_CTRL_MAP = { mtb: "IS6110", ecoli: "uidA", saureus: "nuc", ngonorrhoeae: "porA" };
+const isSpeciesControl = (r, orgId) => {
+  const ctrl = SP_CTRL_MAP[orgId] || "IS6110";
+  return r.gene === ctrl || r.drug === "OTHER" || r.drug === "SPECIES_CONTROL";
+};
 /* GreenBlue colormap; single-cell omics UMAP aesthetic.
    Stops: light gray → pale green → teal → blue → deep blue. */
 const gradientColor = (t) => {
@@ -492,7 +499,7 @@ const UMAPPanel = ({ jobId }) => {
   if (loading) return null;
   if (!umapData) return null;
 
-  const GENE_COLORS = { rpoB: "#e6194b", katG: "#3cb44b", fabG1: "#4363d8", embB: "#f58231", pncA: "#911eb4", gyrA: "#42d4f4", rrs: "#f032e6", eis: "#aaffc3", IS6110: "#bfef45" };
+  const GENE_COLORS = { rpoB: "#e6194b", katG: "#3cb44b", fabG1: "#4363d8", embB: "#f58231", pncA: "#911eb4", gyrA: "#42d4f4", rrs: "#f032e6", eis: "#aaffc3", IS6110: "#bfef45", uidA: "#bfef45", nuc: "#bfef45", porA: "#bfef45", mecA: "#e6194b", vanA: "#3cb44b", penA: "#4363d8", mtrR: "#f58231", blaCTX: "#911eb4", blaNDM: "#42d4f4", blaKPC: "#f032e6", mcr: "#aaffc3" };
   const getGene = (label) => { if (!label) return "other"; const g = label.replace(/_.*/, ""); return GENE_COLORS[g] ? g : "other"; };
   const colorOpts = [
     { key: "drug", label: "Drug class" },
@@ -623,7 +630,7 @@ const InSilicoCaveat = () => {
   );
 };
 
-const OverviewTab = ({ results, scorer, jobId, panelData }) => {
+const OverviewTab = ({ results, scorer, jobId, panelData, orgId = "mtb" }) => {
   const mobile = useIsMobile();
   const [glossaryOpen, setGlossaryOpen] = useState(false);
 
@@ -638,8 +645,9 @@ const OverviewTab = ({ results, scorer, jobId, panelData }) => {
   const withPrimers = results.filter((r) => r.hasPrimers).length;
   const directResults = results.filter((r) => r.strategy === "Direct" && r.disc < 900);
   const avgDisc = directResults.length ? +(directResults.reduce((a, r) => a + r.disc, 0) / directResults.length).toFixed(1) : 0;
-  // Separate direct (excl. IS6110) vs proximity discrimination
-  const directNonIS = directResults.filter(r => r.gene !== "IS6110");
+  // Separate direct (excl. species control) vs proximity discrimination
+  const spCtrl = SP_CTRL_MAP[orgId] || "IS6110";
+  const directNonIS = directResults.filter(r => !isSpeciesControl(r, orgId));
   const avgDiscDirect = directNonIS.length ? +(directNonIS.reduce((a, r) => a + r.disc, 0) / directNonIS.length).toFixed(1) : 0;
   const highDisc = directResults.filter((r) => r.disc >= 3).length;
   const directCount = results.filter((r) => r.strategy === "Direct").length;
@@ -1051,7 +1059,7 @@ const OverviewTab = ({ results, scorer, jobId, panelData }) => {
               const topLeft = scatterData.filter(d => d.score < 0.4 && d.disc >= 3);
               const bestCandidate = [...scatterData].sort((a, b) => (b.score * b.disc) - (a.score * a.disc))[0];
               const worstCandidate = [...scatterData].sort((a, b) => (a.score * a.disc) - (b.score * b.disc))[0];
-              const proximityCands = results.filter(r => r.strategy === "Proximity" && r.gene !== "IS6110");
+              const proximityCands = results.filter(r => r.strategy === "Proximity" && !isSpeciesControl(r, orgId));
               const viableProx = proximityCands.filter(r => !r.asrpaDiscrimination || r.asrpaDiscrimination.block_class !== "none");
               const nonViableProx = proximityCands.length - viableProx.length;
               return (
@@ -1490,7 +1498,7 @@ const CandidateAccordion = ({ r, onShowAlternatives }) => {
         {[
           { l: "Activity", v: (r.cnnCalibrated ?? r.score).toFixed(3), c: (r.cnnCalibrated ?? r.score) > 0.7 ? T.primary : (r.cnnCalibrated ?? r.score) > 0.5 ? T.warning : T.danger },
           ...(r.pamAdjusted != null && r.pamPenalty != null && r.pamPenalty < 1.0 ? [{ l: "PAM-adjusted", v: `${r.pamAdjusted.toFixed(3)} (${r.pamPenalty}×)`, c: T.textSec }] : []),
-          { l: r.strategy === "Proximity" ? "Disc (AS-RPA)" : "Discrimination", v: r.strategy === "Proximity" ? (r.asrpaDiscrimination ? (r.asrpaDiscrimination.block_class === "none" ? "1× (no mismatch)" : `${r.asrpaDiscrimination.disc_ratio >= 100 ? "≥100" : r.asrpaDiscrimination.disc_ratio.toFixed(0)}× ${r.asrpaDiscrimination.terminal_mismatch}`) : "AS-RPA") : r.gene === "IS6110" ? "N/A (control)" : `${typeof r.disc === "number" ? r.disc.toFixed(1) : r.disc}×`, c: r.strategy === "Proximity" ? (r.asrpaDiscrimination?.block_class === "none" ? T.danger : T.purple) : r.gene === "IS6110" ? T.textTer : discColor },
+          { l: r.strategy === "Proximity" ? "Disc (AS-RPA)" : "Discrimination", v: r.strategy === "Proximity" ? (r.asrpaDiscrimination ? (r.asrpaDiscrimination.block_class === "none" ? "1× (no mismatch)" : `${r.asrpaDiscrimination.disc_ratio >= 100 ? "≥100" : r.asrpaDiscrimination.disc_ratio.toFixed(0)}× ${r.asrpaDiscrimination.terminal_mismatch}`) : "AS-RPA") : isSpeciesControl(r, orgId) ? "N/A (control)" : `${typeof r.disc === "number" ? r.disc.toFixed(1) : r.disc}×`, c: r.strategy === "Proximity" ? (r.asrpaDiscrimination?.block_class === "none" ? T.danger : T.purple) : isSpeciesControl(r, orgId) ? T.textTer : discColor },
           ...(r.strategy === "Proximity" && r.proximityDistance ? [{ l: "Distance", v: `${r.proximityDistance} bp`, c: T.purple }] : []),
           { l: "Activity QC", v: r.activityQc != null ? r.activityQc.toFixed(3) : (r.score ?? 0).toFixed(3), c: T.textTer },
           ...(r.discriminationQc != null ? [{ l: "Disc QC", v: r.discriminationQc.toFixed(3), c: r.discriminationQc > 0.6 ? T.success : r.discriminationQc > 0.3 ? T.warning : T.danger }] : []),
@@ -1720,7 +1728,7 @@ const CandidateAccordion = ({ r, onShowAlternatives }) => {
   );
 };
 
-const CandidatesTab = ({ results, jobId, connected, scorer }) => {
+const CandidatesTab = ({ results, jobId, connected, scorer, orgId = "mtb" }) => {
   const mobile = useIsMobile();
   const [search, setSearch] = useState("");
   const defaultSort = "readinessScore";
@@ -1805,6 +1813,9 @@ const CandidatesTab = ({ results, jobId, connected, scorer }) => {
     "rrs_A1401G": { pct: ">80%", tip: "Dominant AG-R mechanism" },
     "eis_C-14T": { pct: "~10%", tip: "KAN-R via eis promoter" },
     "IS6110_N0N": { pct: "N/A", tip: "Species ID control" },
+    "uidA_N0N": { pct: "N/A", tip: "Species ID control" },
+    "nuc_N0N": { pct: "N/A", tip: "Species ID control" },
+    "porA_N0N": { pct: "N/A", tip: "Species ID control" },
   };
 
   // Risk flags per candidate
@@ -1879,7 +1890,7 @@ const CandidatesTab = ({ results, jobId, connected, scorer }) => {
           {filtered.map((r) => {
             const isExpanded = expanded === r.label;
             const scoreVal = r.cnnCalibrated ?? r.score;
-            const discColor = r.gene === "IS6110" ? T.textTer : r.strategy === "Proximity" ? T.textSec : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger;
+            const discColor = isSpeciesControl(r, orgId) ? T.textTer : r.strategy === "Proximity" ? T.textSec : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger;
             const riskLevel = r.riskProfile?.overall;
             return (
               <div key={r.label}>
@@ -1903,7 +1914,7 @@ const CandidatesTab = ({ results, jobId, connected, scorer }) => {
                     <div>
                       <span style={{ color: T.textTer }}>Disc </span>
                       <span style={{ fontFamily: FONT, fontWeight: 600, color: discColor }}>
-                        {r.strategy === "Proximity" ? "AS-RPA" : r.gene === "IS6110" ? "N/A" : `${typeof r.disc === "number" ? r.disc.toFixed(1) : r.disc}×`}
+                        {r.strategy === "Proximity" ? "AS-RPA" : isSpeciesControl(r, orgId) ? "N/A" : `${typeof r.disc === "number" ? r.disc.toFixed(1) : r.disc}×`}
                       </span>
                     </div>
                     {r.readinessScore != null && (
@@ -1960,7 +1971,7 @@ const CandidatesTab = ({ results, jobId, connected, scorer }) => {
               const isHov = hoveredRow === r.label;
               const riskLevel = r.riskProfile?.overall;
               const riskBorderColor = riskLevel === "red" ? T.danger : riskLevel === "amber" ? T.warning : "transparent";
-              const discColor = r.gene === "IS6110" ? T.textTer : r.strategy === "Proximity" ? T.textSec : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger;
+              const discColor = isSpeciesControl(r, orgId) ? T.textTer : r.strategy === "Proximity" ? T.textSec : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger;
               const activityVal = r.cnnCalibrated ?? r.score;
               const pamAdjVal = r.pamAdjusted ?? activityVal;
               const stratIcon = r.strategy === "Proximity" ? "P" : "D";
@@ -2011,8 +2022,8 @@ const CandidatesTab = ({ results, jobId, connected, scorer }) => {
                       </div>
                     </td>
                     {/* Disc; with AS-RPA range for proximity */}
-                    <td style={{ padding: "10px 8px", fontFamily: FONT, fontWeight: 600, fontSize: "11px", color: r.gene === "IS6110" ? T.textTer : r.strategy === "Proximity" ? "#7c3aed" : discColor }}>
-                      {r.gene === "IS6110" ? <span style={{ fontSize: "10px", fontWeight: 400 }}>N/A</span>
+                    <td style={{ padding: "10px 8px", fontFamily: FONT, fontWeight: 600, fontSize: "11px", color: isSpeciesControl(r, orgId) ? T.textTer : r.strategy === "Proximity" ? "#7c3aed" : discColor }}>
+                      {isSpeciesControl(r, orgId) ? <span style={{ fontSize: "10px", fontWeight: 400 }}>N/A</span>
                         : r.strategy === "Proximity" ? (() => {
                           const ad = r.asrpaDiscrimination;
                           if (ad && ad.disc_ratio) return <span>{ad.disc_ratio >= 100 ? "\u2265100" : `~${ad.disc_ratio.toFixed(0)}`}{"\u00d7"}</span>;
@@ -2368,7 +2379,7 @@ const CrossReactivityMatrix = () => {
   );
 };
 
-const DiscriminationTab = ({ results }) => {
+const DiscriminationTab = ({ results, orgId = "mtb" }) => {
   const mobile = useIsMobile();
   const [expandedFeatures, setExpandedFeatures] = useState({});
   const nonControl = results.filter((r) => r.disc < 900);
@@ -2441,7 +2452,7 @@ const DiscriminationTab = ({ results }) => {
       <div style={{ background: T.bgSub, border: `1px solid ${T.border}`, borderRadius: "4px", padding: "14px 18px", marginBottom: "16px" }}>
         <div style={{ fontSize: "11px", fontWeight: 600, color: T.textTer, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "10px" }}>Discrimination Summary, All Targets</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4px" }}>
-          {[...results].filter(r => r.gene !== "IS6110").sort((a, b) => {
+          {[...results].filter(r => !isSpeciesControl(r, orgId)).sort((a, b) => {
             const aDisc = a.strategy === "Proximity" ? (a.asrpaDiscrimination?.disc_ratio || 100) : (a.disc || 0);
             const bDisc = b.strategy === "Proximity" ? (b.asrpaDiscrimination?.disc_ratio || 100) : (b.disc || 0);
             return bDisc - aDisc;
@@ -2843,11 +2854,11 @@ const DiscriminationTab = ({ results }) => {
   );
 };
 
-const PrimersTab = ({ results }) => {
+const PrimersTab = ({ results, orgId = "mtb" }) => {
   const mobile = useIsMobile();
   const [hoveredRow, setHoveredRow] = useState(null);
   const withPrimers = results.filter((r) => r.hasPrimers);
-  const withoutPrimers = results.filter((r) => !r.hasPrimers && r.gene !== "IS6110");
+  const withoutPrimers = results.filter((r) => !r.hasPrimers && !isSpeciesControl(r, orgId));
   const directWithPrimers = withPrimers.filter((r) => r.strategy === "Direct");
   const proximityWithPrimers = withPrimers.filter((r) => r.strategy === "Proximity");
 
@@ -2987,7 +2998,7 @@ const PrimersTab = ({ results }) => {
               const isHov = hoveredRow === r.label;
               const discVal = r.strategy === "Proximity"
                 ? (() => { const sp = r.asrpaDiscrimination?.estimated_specificity; return sp != null ? `≥${(1 / Math.max(1 - sp, 0.001)).toFixed(0)}×` : "≥100×"; })()
-                : r.gene === "IS6110" ? "N/A"
+                : isSpeciesControl(r, orgId) ? "N/A"
                 : r.disc > 0 ? `${r.disc.toFixed(1)}×${r.hasSM ? " (post-SM)" : ""}` : "–";
               return (
               <tr key={r.label} style={{ borderBottom: `1px solid ${T.borderLight}`, transition: "background 0.15s", background: isHov ? `${T.primary}08` : "transparent" }}
@@ -3008,7 +3019,7 @@ const PrimersTab = ({ results }) => {
                     <div style={{ fontSize: "9px", color: "#0284C7", marginTop: "2px" }}>+ shared std</div>
                   )}
                 </td>
-                <td style={{ padding: "10px 14px", fontFamily: FONT, fontWeight: 600, fontSize: "11px", color: r.gene === "IS6110" ? T.textTer : r.strategy === "Proximity" ? T.purple : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger }}>
+                <td style={{ padding: "10px 14px", fontFamily: FONT, fontWeight: 600, fontSize: "11px", color: isSpeciesControl(r, orgId) ? T.textTer : r.strategy === "Proximity" ? T.purple : r.disc >= 3 ? T.success : r.disc >= 2 ? T.warning : T.danger }}>
                   {discVal}
                 </td>
                 <td style={{ padding: "10px 14px" }}>
@@ -3042,10 +3053,11 @@ const PrimersTab = ({ results }) => {
   );
 };
 
-const MultiplexTab = ({ results, panelData, jobId, connected }) => {
+const MultiplexTab = ({ results, panelData, jobId, connected, orgId = "mtb" }) => {
   const mobile = useIsMobile();
   const drugs = [...new Set(results.map((r) => r.drug))];
-  const controlIncluded = results.some((r) => r.gene === "IS6110");
+  const spCtrl = SP_CTRL_MAP[orgId] || "IS6110";
+  const controlIncluded = results.some((r) => isSpeciesControl(r, orgId));
   const directCount = results.filter(r => r.strategy === "Direct").length;
   const proximityCount = results.filter(r => r.strategy === "Proximity").length;
   const withPrimers = results.filter(r => r.hasPrimers && !(r.asrpaDiscrimination?.block_class === "none")).length;
@@ -3064,7 +3076,7 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
   }, [connected, jobId]);
 
   // ═══════════ PREDICTED ELECTROCHEMICAL READOUT; State ═══════════
-  const [echemCandidate, setEchemCandidate] = useState("rpoB_S531L");
+  const [echemCandidate, setEchemCandidate] = useState(results[0]?.label || "rpoB_S531L");
   const [echemTechnique, setEchemTechnique] = useState("SWV");
   const [echemTime, setEchemTime] = useState(30);       // minutes
   const [echemBloodTiter, setEchemBloodTiter] = useState(100); // cp/mL
@@ -3125,11 +3137,15 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
     ],
   };
 
-  // Electrode layout; 7×2 grid (14-plex: 12 resistance mutations + IS6110 + RNaseP)
-  const electrodeLayout = [
-    ["IS6110","rpoB_S531L","rpoB_H526Y","rpoB_D516V","katG_S315T","fabG1_C-15T","embB_M306V"],
-    ["embB_M306I","pncA_H57D","gyrA_D94G","gyrA_A90V","rrs_A1401G","eis_C-14T","RNaseP"],
-  ];
+  // Electrode layout; dynamic grid from results + species control + RNaseP
+  const electrodeLayout = useMemo(() => {
+    const labels = results.map(r => r.label);
+    // Add species control at start if not already in results
+    const ctrlLabel = controlIncluded ? results.find(r => isSpeciesControl(r, orgId))?.label || spCtrl : spCtrl;
+    const allPads = [ctrlLabel, ...labels.filter(l => l !== ctrlLabel), "RNaseP"];
+    const cols = Math.ceil(allPads.length / 2);
+    return [allPads.slice(0, cols), allPads.slice(cols)];
+  }, [results, orgId]);
 
   // Drug colors for pads
   const PAD_DRUG_COLORS = { RIF: "#1E3A5F", INH: "#D97706", EMB: "#059669", PZA: "#0891B2", FQ: "#DC2626", AG: "#7C3AED", CTRL: "#9CA3AF" };
@@ -3138,7 +3154,7 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
   const targetDrug = (t) => {
     const r = results.find(x => x.label === t);
     if (r) return r.drug || "OTHER";
-    if (t === "IS6110" || t === "RNaseP") return "CTRL";
+    if (t === spCtrl || t === "RNaseP" || t.endsWith("_N0N")) return "CTRL";
     if (t.startsWith("rpoB")) return "RIF";
     if (t.startsWith("katG") || t.startsWith("fabG1")) return "INH";
     if (t.startsWith("embB")) return "EMB";
@@ -3149,7 +3165,12 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
   };
   const targetStrategy = (t) => { const r = results.find(x => x.label === t); return r ? r.strategy : "Direct"; };
   const targetScore = (t) => { const r = results.find(x => x.label === t); return r ? ((r.cnnCalibrated ?? r.score) || 0) : 0; };
-  const coAmpliconGroups = [["rpoB_S531L","rpoB_H526Y","rpoB_D516V"],["embB_M306V","embB_M306I"],["gyrA_D94G","gyrA_A90V"]];
+  // Co-amplicon groups: targets at the same gene share one RPA amplicon
+  const coAmpliconGroups = useMemo(() => {
+    const byGene = {};
+    results.forEach(r => { if (!isSpeciesControl(r, orgId)) { (byGene[r.gene] = byGene[r.gene] || []).push(r.label); } });
+    return Object.values(byGene).filter(g => g.length > 1);
+  }, [results, orgId]);
   const isCoAmplicon = (t) => coAmpliconGroups.some(g => g.includes(t));
   const coAmpliconPartner = (t) => { const g = coAmpliconGroups.find(g => g.includes(t)); return g ? g.filter(x => x !== t)[0] : null; };
 
@@ -3170,22 +3191,26 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
   const V_blood_mL = 1.0;
   const extraction_yield = 0.6;
   const V_eluate_uL = 50;
-  const V_pad_uL = 50 / 14;
+  const V_pad_uL = 50 / Math.max(results.length + 1, 2); // +1 for RNaseP
   const P_rpa = 0.95;
   const P_signal = 1.0;
-  const IS6110_copy_number = 10;
+  // IS6110 has ~10 copies in MTB; other species controls are single-copy
+  const spCtrlCopyNumber = orgId === "mtb" ? 10 : 1;
 
-  const drug_targets = {
-    RIF: ["rpoB_S531L","rpoB_H526Y","rpoB_D516V"],
-    INH: ["katG_S315T","fabG1_C-15T"],
-    EMB: ["embB_M306V","embB_M306I"],
-    PZA: ["pncA_H57D"],
-    FQ: ["gyrA_D94G","gyrA_A90V"],
-    AG: ["rrs_A1401G","eis_C-14T"],
-  };
+  // Build drug → target mapping dynamically from results
+  const drug_targets = useMemo(() => {
+    const dt = {};
+    results.forEach(r => {
+      if (isSpeciesControl(r, orgId)) return;
+      const d = r.drug || "OTHER";
+      if (!dt[d]) dt[d] = [];
+      dt[d].push(r.label);
+    });
+    return dt;
+  }, [results, orgId]);
 
   const WHO_thresholds = { RIF: 0.95, INH: 0.90, FQ: 0.90, EMB: 0.80, PZA: 0.80, AG: 0.80 };
-  const DRUG_LINE_COLORS = { RIF: "#1E3A5F", INH: "#4338CA", EMB: "#059669", PZA: "#059669", FQ: "#DC2626", AG: "#3730A3", IS6110: "#6B7280" };
+  const DRUG_LINE_COLORS = { RIF: "#1E3A5F", INH: "#4338CA", EMB: "#059669", PZA: "#059669", FQ: "#DC2626", AG: "#3730A3", CTRL: "#6B7280" };
 
   // ═══════════ PREDICTED ELECTROCHEMICAL READOUT; Physics Engine ═══════════
   // Architecture-specific electrochemistry configurations
@@ -3416,7 +3441,7 @@ const MultiplexTab = ({ results, panelData, jobId, connected }) => {
     const strategy = targetStrategy(echemCandidate);
     const drug = targetDrug(echemCandidate);
     const isProximity = strategy === "Proximity";
-    return { label: echemCandidate, efficiency: eff, discrimination: disc, strategy, drug, isProximity, isIS6110: echemCandidate === "IS6110", copyNumber: echemCandidate === "IS6110" ? 10 : 1 };
+    return { label: echemCandidate, efficiency: eff, discrimination: disc, strategy, drug, isProximity, isIS6110: echemCandidate === spCtrl, copyNumber: echemCandidate === spCtrl ? spCtrlCopyNumber : 1 };
   }, [echemCandidate, results]);
 
   // Panel A: Voltammogram curves
@@ -4404,7 +4429,7 @@ class TabErrorBoundary extends React.Component {
   }
 }
 const DiagnosticsErrorBoundary = (props) => <TabErrorBoundary label="Diagnostics" {...props} />;
-const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
+const DiagnosticsTab = ({ results, jobId, connected, scorer, orgId = "mtb" }) => {
   const mobile = useIsMobile();
 
   // State
@@ -4452,7 +4477,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
     if (label.startsWith("pncA")) return "PZA";
     if (label.startsWith("gyrA")) return "FQ";
     if (label.startsWith("rrs") || label.startsWith("eis")) return "AG";
-    if (label.startsWith("IS6110")) return "OTHER";
+    if (Object.values(SP_CTRL_MAP).some(c => label.startsWith(c))) return "OTHER";
     return "";
   }, []);
 
@@ -4467,7 +4492,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
         const eff = r.cnnCalibrated ?? r.score ?? 0;
         const disc = r.disc != null && r.disc < 900 ? r.disc : 0;
         const asrpaViable = r.strategy !== "Proximity" || !r.asrpaDiscrimination || r.asrpaDiscrimination.block_class !== "none";
-        const isControl = r.gene === "IS6110" || (normDrug(r.drug) || inferDrug(r.label)) === "OTHER";
+        const isControl = isSpeciesControl(r, orgId);
         const ready = isControl ? (r.hasPrimers && eff >= effT) : (r.hasPrimers && eff >= effT && asrpaViable && (r.strategy === "Proximity" || disc >= discT));
         const drug = normDrug(r.drug) || inferDrug(r.label);
         return { target_label: r.label || "unknown", drug, efficiency: eff, discrimination: disc, is_assay_ready: ready, has_primers: !!r.hasPrimers, strategy: r.strategy || "Direct", asrpaViable };
@@ -4800,7 +4825,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
             const filtered = results.filter(r => {
               const eff = r.cnnCalibrated ?? r.score;
               if (eff < effT) return false;
-              if (r.gene === "IS6110") return false; // species control
+              if (isSpeciesControl(r, orgId)) return false; // species control
               if (r.strategy === "Proximity") return !(r.asrpaDiscrimination?.block_class === "none");
               return (r.disc > 0 && r.disc < 900) ? r.disc >= discT : false;
             });
@@ -4846,7 +4871,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
                   <div>
                     <div style={{ fontSize: "14px", fontWeight: 600, color: T.text, fontFamily: HEADING }}>MUT vs WT Predicted Activity</div>
                     <div style={{ fontSize: "11px", color: T.textSec, marginTop: "3px", lineHeight: 1.5, maxWidth: "540px" }}>
-                      Density from <strong>{plotResults.length}</strong>/{results.filter(r => r.gene !== "IS6110").length} candidates passing <strong>{PRESET_LABELS[activePreset] || activePreset}</strong> thresholds (eff ≥ {effT}, disc ≥ {discT}×). Greater separation = better discrimination. Direct targets: A<sub>WT</sub> = A<sub>MUT</sub> / Cas12a disc. Proximity targets: A<sub>WT</sub> = A<sub>MUT</sub> / AS-RPA disc (WT not amplified → near-zero signal).
+                      Density from <strong>{plotResults.length}</strong>/{results.filter(r => !isSpeciesControl(r, orgId)).length} candidates passing <strong>{PRESET_LABELS[activePreset] || activePreset}</strong> thresholds (eff ≥ {effT}, disc ≥ {discT}×). Greater separation = better discrimination. Direct targets: A<sub>WT</sub> = A<sub>MUT</sub> / Cas12a disc. Proximity targets: A<sub>WT</sub> = A<sub>MUT</sub> / AS-RPA disc (WT not amplified → near-zero signal).
                     </div>
                   </div>
                   <Badge variant={separation >= 0.15 ? "success" : separation >= 0.08 ? "warning" : "danger"}>
@@ -4937,7 +4962,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
                       {separation >= 0.15 ? " Good separation. The panel reliably distinguishes resistant from susceptible samples at the aggregate level." : separation >= 0.08 ? " Moderate separation. Borderline samples may produce ambiguous calls; consider tightening the panel to high-discrimination targets only." : " Poor separation. The panel cannot reliably distinguish MUT from WT; review target selection and consider dropping low-discrimination candidates."}
                       {` Overlap zone: ${overlapPct}%. This is the aggregate overlap; individual targets with high discrimination (e.g., disc >=10x) have near-zero overlap. In practice each target is read independently, so per-target separation matters more than panel-level aggregate.`}
                       {` Strongest MUT signal: ${bestMutLabel} (${mutSorted[0].toFixed(3)}). Weakest: ${worstMutLabel} (${mutSorted[mutSorted.length - 1].toFixed(3)}).`}
-                      {plotResults.length === results.filter(r => r.gene !== "IS6110").length && activePreset !== "balanced" && ` Note: all candidates exceed the ${PRESET_LABELS[activePreset] || activePreset} thresholds. This profile produces identical results to a less stringent profile for the current panel.`}
+                      {plotResults.length === results.filter(r => !isSpeciesControl(r, orgId)).length && activePreset !== "balanced" && ` Note: all candidates exceed the ${PRESET_LABELS[activePreset] || activePreset} thresholds. This profile produces identical results to a less stringent profile for the current panel.`}
                     </div>
                   );
                 })()}
@@ -5309,7 +5334,7 @@ const DiagnosticsTab = ({ results, jobId, connected, scorer }) => {
                             <td style={{ padding: "10px 12px" }}>{t.has_primers ? <CheckCircle size={14} color={T.success} /> : <span style={{ color: T.textTer }}>–</span>}</td>
                             <td style={{ padding: "10px 12px" }}>
                               {(() => {
-                                const isControl = t.drug === "OTHER" || t.target_label === "IS6110_N0N";
+                                const isControl = t.drug === "OTHER" || Object.values(SP_CTRL_MAP).some(c => t.target_label.startsWith(c));
                                 if (isControl) return (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px", fontWeight: 600, padding: "3px 10px", borderRadius: "3px", background: "rgba(16,185,129,0.1)", color: T.success }}>ID Control</span>
                                 );
@@ -5487,6 +5512,7 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
   const [activeJob, setActiveJob] = useState(jobId || null);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
+  const [orgId, setOrgId] = useState("mtb");
 
   /* Sync activeJob when jobId prop changes (e.g. navigating from pipeline) */
   useEffect(() => {
@@ -5527,19 +5553,20 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
       const isHeuristic = activeJob.includes("-heuristic-");
       const parts = activeJob.split("-");
       // Extract organism (3rd segment)
-      const orgId = parts.length >= 4 ? parts[2] : "mtb";
-      const org = ORGANISMS.find(o => o.id === orgId);
+      const mockOrgId = parts.length >= 4 ? parts[2] : "mtb";
+      setOrgId(mockOrgId);
+      const org = ORGANISMS.find(o => o.id === mockOrgId);
       const orgMutations = org ? org.mutations : MUTATIONS;
       // Extract selected mutation indices (everything between organism and timestamp)
       const indicesStr = parts.length >= 5 ? parts.slice(3, -1).join("-") : "";
       const selectedIndices = indicesStr ? indicesStr.split(",").map(Number).filter(n => !isNaN(n)) : null;
       // Generate mock results for the right organism
-      const mockResults = generateMockResults(orgMutations, orgId);
+      const mockResults = generateMockResults(orgMutations, mockOrgId);
       let filtered = mockResults;
       if (selectedIndices && selectedIndices.length > 0 && selectedIndices.length < orgMutations.length) {
         const mutLabel = (m) => m.category === "gene_presence" ? m.gene : `${m.gene}_${m.ref}${m.pos}${m.alt}`;
         const selectedLabels = new Set(selectedIndices.map(i => orgMutations[i] ? mutLabel(orgMutations[i]) : null).filter(Boolean));
-        const spCtrl = { mtb: "IS6110", ecoli: "uidA", saureus: "nuc", ngonorrhoeae: "porA" }[orgId] || "";
+        const spCtrl = SP_CTRL_MAP[mockOrgId] || "";
         filtered = mockResults.filter(r => selectedLabels.has(r.label) || r.gene === spCtrl);
       }
       if (isHeuristic) {
@@ -5665,12 +5692,12 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
           </div>
 
           {/* Tab content */}
-          {tab === "overview" && <OverviewTab results={results} scorer={scorerProp} jobId={activeJob} panelData={panelData} />}
-          {tab === "candidates" && <CandidatesTab results={results} jobId={activeJob} connected={connected} scorer={scorerProp} />}
-          {tab === "discrimination" && <DiscriminationTab results={results} />}
-          {tab === "primers" && <PrimersTab results={results} />}
-          {tab === "multiplex" && <TabErrorBoundary label="Multiplex"><MultiplexTab results={results} panelData={panelData} jobId={activeJob} connected={connected} /></TabErrorBoundary>}
-          {tab === "diagnostics" && <DiagnosticsErrorBoundary><DiagnosticsTab results={results} jobId={activeJob} connected={connected} scorer={scorerProp} /></DiagnosticsErrorBoundary>}
+          {tab === "overview" && <OverviewTab results={results} scorer={scorerProp} jobId={activeJob} panelData={panelData} orgId={orgId} />}
+          {tab === "candidates" && <CandidatesTab results={results} jobId={activeJob} connected={connected} scorer={scorerProp} orgId={orgId} />}
+          {tab === "discrimination" && <DiscriminationTab results={results} orgId={orgId} />}
+          {tab === "primers" && <PrimersTab results={results} orgId={orgId} />}
+          {tab === "multiplex" && <TabErrorBoundary label="Multiplex"><MultiplexTab results={results} panelData={panelData} jobId={activeJob} connected={connected} orgId={orgId} /></TabErrorBoundary>}
+          {tab === "diagnostics" && <DiagnosticsErrorBoundary><DiagnosticsTab results={results} jobId={activeJob} connected={connected} scorer={scorerProp} orgId={orgId} /></DiagnosticsErrorBoundary>}
         </>
       )}
 
