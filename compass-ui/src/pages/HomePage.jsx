@@ -103,7 +103,7 @@ const HomePage = ({ goTo, connected }) => {
       if (err) { setError(err); setLaunching(false); return; }
       startInlinePipeline(data.job_id);
     } else {
-      startInlinePipeline("mock-" + scorer + "-" + [...selected].join(",") + "-" + Date.now());
+      startInlinePipeline("mock-" + scorer + "-" + organism + "-" + [...selected].join(",") + "-" + Date.now());
     }
   };
 

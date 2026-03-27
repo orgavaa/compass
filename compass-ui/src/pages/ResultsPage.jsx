@@ -19,7 +19,7 @@ import { Badge, DrugBadge, Seq, Btn, tooltipStyle, gaussianKDE, stdDev } from ".
 import { CollapsibleSection, FigureSection } from "../components/CollapsibleSection";
 import { AmpliconMap, MismatchProfile } from "../components/CandidateViewer";
 import {
-  MUTATIONS, RESULTS, CROSS_REACTIVITY_LABELS, CROSS_REACTIVITY_DRUG_GROUPS, MOCK_CROSS_REACTIVITY,
+  MUTATIONS, RESULTS, ORGANISMS, generateMockResults, CROSS_REACTIVITY_LABELS, CROSS_REACTIVITY_DRUG_GROUPS, MOCK_CROSS_REACTIVITY,
   SCORING_FEATURES, DRUG_LABELS, BIBLIOGRAPHY,
 } from "../mockData";
 import {
@@ -5522,21 +5522,25 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
         setLoading(false);
       });
     } else if (activeJob.startsWith("mock-")) {
-      /* Mock mode; adapt mock data to scorer + panel encoded in job ID */
+      /* Mock mode; adapt mock data to scorer + organism + panel encoded in job ID
+         Format: mock-{scorer}-{organism}-{indices...}-{timestamp} */
       const isHeuristic = activeJob.includes("-heuristic-");
-      // Extract selected mutation indices from job ID (format: mock-scorer-0,1,2,...-timestamp)
       const parts = activeJob.split("-");
-      const indicesStr = parts.length >= 4 ? parts.slice(2, -1).join("-") : "";
+      // Extract organism (3rd segment)
+      const orgId = parts.length >= 4 ? parts[2] : "mtb";
+      const org = ORGANISMS.find(o => o.id === orgId);
+      const orgMutations = org ? org.mutations : MUTATIONS;
+      // Extract selected mutation indices (everything between organism and timestamp)
+      const indicesStr = parts.length >= 5 ? parts.slice(3, -1).join("-") : "";
       const selectedIndices = indicesStr ? indicesStr.split(",").map(Number).filter(n => !isNaN(n)) : null;
-      // Filter RESULTS to only selected mutations (+ IS6110 control always included)
-      let filtered = RESULTS;
-      if (selectedIndices && selectedIndices.length > 0 && selectedIndices.length < RESULTS.length) {
-        const selectedLabels = new Set(selectedIndices.map(i => {
-          const m = MUTATIONS[i];
-          if (!m) return null;
-          return m.category === "gene_presence" ? m.gene : `${m.gene}_${m.ref}${m.pos}${m.alt}`;
-        }).filter(Boolean));
-        filtered = RESULTS.filter(r => selectedLabels.has(r.label) || r.gene === "IS6110" || r.category === "gene_presence");
+      // Generate mock results for the right organism
+      const mockResults = generateMockResults(orgMutations, orgId);
+      let filtered = mockResults;
+      if (selectedIndices && selectedIndices.length > 0 && selectedIndices.length < orgMutations.length) {
+        const mutLabel = (m) => m.category === "gene_presence" ? m.gene : `${m.gene}_${m.ref}${m.pos}${m.alt}`;
+        const selectedLabels = new Set(selectedIndices.map(i => orgMutations[i] ? mutLabel(orgMutations[i]) : null).filter(Boolean));
+        const spCtrl = { mtb: "IS6110", ecoli: "uidA", saureus: "nuc", ngonorrhoeae: "porA" }[orgId] || "";
+        filtered = mockResults.filter(r => selectedLabels.has(r.label) || r.gene === spCtrl);
       }
       if (isHeuristic) {
         setResults(filtered.map(r => ({

@@ -83,54 +83,65 @@ const MUTATIONS = [
   { gene: "eis", ref: "C", pos: -14, alt: "T", drug: "AG", drugFull: "Amikacin", conf: "High", tier: 1, category: "promoter" },
 ];
 
-const RESULTS = MUTATIONS.map((m, i) => {
-  const spacer = seq(20 + (i % 4));
-  const wtSpacer = spacer.split("").map((c, j) => j === 10 ? (c === "A" ? "G" : c === "T" ? "C" : c === "G" ? "A" : "T") : c).join("");
-  const refKey = `${m.gene}_${m.ref}${m.pos}${m.alt}`;
-  const heuristic = +(0.6 + Math.random() * 0.35).toFixed(3);
-  const cnnRaw = +(0.5 + Math.random() * 0.4).toFixed(4);
-  const cnnCal = +(cnnRaw * 0.8 + 0.18).toFixed(4);
-  const pamPen = [1.0, 0.65, 0.55, 0.45, 1.0, 0.40, 0.35, 0.30][i % 8];
-  const pamAdj = +(cnnCal * pamPen).toFixed(4);
-  const discRatio = +(1.5 + Math.random() * 8).toFixed(1);
-  const mutAct = +(0.5 + Math.random() * 0.45).toFixed(2);
-  const wtAct = +(1.0 / Math.max(discRatio, 0.01)).toFixed(4);
-  return {
-    ...m, label: refKey,
-    strategy: i % 3 === 0 ? "Direct" : i % 3 === 1 ? "Proximity" : "Direct",
-    spacer, wtSpacer, pam: ["TTTG", "TTCA", "TATA", "CTTG", "TTTC", "TCTG", "TGTC", "ATTG"][i % 8],
-    pamVariant: ["TTTV", "TTCV", "TATV", "CTTV", "TTTV", "TCTV", "TGTV", "ATTV"][i % 8],
-    pamPenalty: pamPen,
-    isCanonicalPam: i % 8 === 0 || i % 8 === 4,
-    score: heuristic, cnnScore: cnnRaw, cnnCalibrated: cnnCal, pamAdjusted: pamAdj,
-    activityQc: +(0.5 + Math.random() * 0.4).toFixed(4), discriminationQc: +(0.2 + Math.random() * 0.7).toFixed(4),
-    mismatchTypeScore: i % 3 === 1 ? 0 : i % 2 === 0 ? 1.0 : 0.5, flankingGcScore: +(0.3 + Math.random() * 0.5).toFixed(4),
-    mlScores: [{ model_name: "compass_ml", predicted_efficiency: cnnRaw }],
-    disc: discRatio,
-    discrimination: { model_name: "learned_lightgbm", ratio: discRatio, mut_activity: mutAct, wt_activity: wtAct },
-    gc: +(0.35 + Math.random() * 0.3).toFixed(2),
-    ot: Math.floor(Math.random() * 3), hasPrimers: i < 12, hasSM: i % 4 === 1, proximityDistance: i % 3 === 1 ? 15 + Math.floor(Math.random() * 30) : null,
-    fwd: i < 12 ? seq(30) : null, rev: i < 12 ? seq(30) : null,
-    amplicon: i < 12 ? 120 + Math.floor(Math.random() * 60) : null,
-    mutActivity: mutAct,
-    wtActivity: wtAct,
-    pamDisrupted: false,
-    pamDisruptionType: null,
-    refs: WHO_REFS[refKey] || null,
-  };
-});
-RESULTS.push({
-  gene: "IS6110", ref: "N", pos: 0, alt: "N", drug: "OTHER", drugFull: "Other", conf: "N/A", tier: 0, category: "gene_presence",
-  label: "IS6110", strategy: "Direct", spacer: "AATGTCGCCGCGATCGAGCG", wtSpacer: "AATGTCGCCGCGATCGAGCG",
-  pam: "TTTG", pamVariant: "TTTV", pamPenalty: 1.0, isCanonicalPam: true,
-  score: 0.95, cnnScore: 0.88, cnnCalibrated: 0.91, pamAdjusted: 0.91,
-  mlScores: [{ model_name: "compass_ml", predicted_efficiency: 0.88 }],
-  disc: 999, discrimination: { model_name: "learned_lightgbm", ratio: 999, mut_activity: 0.95, wt_activity: 0.001 },
-  gc: 0.65, ot: 0, hasPrimers: true, hasSM: false,
-  fwd: seq(30), rev: seq(30), amplicon: 142, mutActivity: 0.95, wtActivity: 0.001,
-  pamDisrupted: false, pamDisruptionType: null,
-  refs: { who: "N/A", catalogue: "Species control", pmid: "30593580", cryptic: null, freq: "6–16 copies/genome" },
-});
+const SP_CTRL_MAP = { mtb: "IS6110", ecoli: "uidA", saureus: "nuc", ngonorrhoeae: "porA" };
+
+function generateMockResults(mutations, organismId) {
+  const mutLabel = (m) => m.category === "gene_presence" ? m.gene : `${m.gene}_${m.ref}${m.pos}${m.alt}`;
+  const spCtrl = SP_CTRL_MAP[organismId] || "species_ctrl";
+  const results = mutations.map((m, i) => {
+    const spacer = seq(20 + (i % 4));
+    const wtSpacer = spacer.split("").map((c, j) => j === 10 ? (c === "A" ? "G" : c === "T" ? "C" : c === "G" ? "A" : "T") : c).join("");
+    const label = mutLabel(m);
+    const heuristic = +(0.6 + Math.random() * 0.35).toFixed(3);
+    const cnnRaw = +(0.5 + Math.random() * 0.4).toFixed(4);
+    const cnnCal = +(cnnRaw * 0.8 + 0.18).toFixed(4);
+    const pamPen = [1.0, 0.65, 0.55, 0.45, 1.0, 0.40, 0.35, 0.30][i % 8];
+    const pamAdj = +(cnnCal * pamPen).toFixed(4);
+    const discRatio = +(1.5 + Math.random() * 8).toFixed(1);
+    const mutAct = +(0.5 + Math.random() * 0.45).toFixed(2);
+    const wtAct = +(1.0 / Math.max(discRatio, 0.01)).toFixed(4);
+    return {
+      ...m, label,
+      strategy: i % 3 === 0 ? "Direct" : i % 3 === 1 ? "Proximity" : "Direct",
+      spacer, wtSpacer, pam: ["TTTG", "TTCA", "TATA", "CTTG", "TTTC", "TCTG", "TGTC", "ATTG"][i % 8],
+      pamVariant: ["TTTV", "TTCV", "TATV", "CTTV", "TTTV", "TCTV", "TGTV", "ATTV"][i % 8],
+      pamPenalty: pamPen,
+      isCanonicalPam: i % 8 === 0 || i % 8 === 4,
+      score: heuristic, cnnScore: cnnRaw, cnnCalibrated: cnnCal, pamAdjusted: pamAdj,
+      activityQc: +(0.5 + Math.random() * 0.4).toFixed(4), discriminationQc: +(0.2 + Math.random() * 0.7).toFixed(4),
+      mismatchTypeScore: i % 3 === 1 ? 0 : i % 2 === 0 ? 1.0 : 0.5, flankingGcScore: +(0.3 + Math.random() * 0.5).toFixed(4),
+      mlScores: [{ model_name: "compass_ml", predicted_efficiency: cnnRaw }],
+      disc: discRatio,
+      discrimination: { model_name: "learned_lightgbm", ratio: discRatio, mut_activity: mutAct, wt_activity: wtAct },
+      gc: +(0.35 + Math.random() * 0.3).toFixed(2),
+      ot: Math.floor(Math.random() * 3), hasPrimers: true, hasSM: i % 4 === 1, proximityDistance: i % 3 === 1 ? 15 + Math.floor(Math.random() * 30) : null,
+      fwd: seq(30), rev: seq(30),
+      amplicon: 120 + Math.floor(Math.random() * 60),
+      mutActivity: mutAct,
+      wtActivity: wtAct,
+      pamDisrupted: false,
+      pamDisruptionType: null,
+      refs: WHO_REFS[label] || WHO_REFS[`${m.gene}_presence`] || null,
+    };
+  });
+  // Add species identification control
+  results.push({
+    gene: spCtrl, ref: "N", pos: 0, alt: "N", drug: "OTHER", drugFull: "Other", conf: "N/A", tier: 0, category: "gene_presence",
+    label: spCtrl, strategy: "Direct", spacer: seq(20), wtSpacer: seq(20),
+    pam: "TTTG", pamVariant: "TTTV", pamPenalty: 1.0, isCanonicalPam: true,
+    score: 0.95, cnnScore: 0.88, cnnCalibrated: 0.91, pamAdjusted: 0.91,
+    mlScores: [{ model_name: "compass_ml", predicted_efficiency: 0.88 }],
+    disc: 999, discrimination: { model_name: "learned_lightgbm", ratio: 999, mut_activity: 0.95, wt_activity: 0.001 },
+    gc: 0.65, ot: 0, hasPrimers: true, hasSM: false,
+    fwd: seq(30), rev: seq(30), amplicon: 142, mutActivity: 0.95, wtActivity: 0.001,
+    pamDisrupted: false, pamDisruptionType: null,
+    refs: { who: "N/A", catalogue: "Species control", cryptic: null, freq: "species identification" },
+  });
+  return results;
+}
+
+// Default MTB results for backwards compat
+const RESULTS = generateMockResults(MUTATIONS, "mtb");
 
 // ── Mock cross-reactivity matrix (14×14, biologically realistic) ──
 const CROSS_REACTIVITY_LABELS = [
@@ -466,7 +477,7 @@ const ORGANISMS = [
 ];
 
 export {
-  seq, WHO_REFS, MUTATIONS, RESULTS,
+  seq, WHO_REFS, MUTATIONS, RESULTS, generateMockResults,
   CROSS_REACTIVITY_LABELS, CROSS_REACTIVITY_DRUG_GROUPS, MOCK_CROSS_REACTIVITY,
   MODULES, MODULE_NAME_MAP, PROGRESS_TO_STEP, resolveStep,
   SCORING_FEATURES, DRUG_LABELS, BIBLIOGRAPHY,
