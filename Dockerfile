@@ -61,11 +61,20 @@ COPY --from=frontend /ui/dist ./compass-ui/dist/
 # Compass-ML model package (architecture + checkpoints + features)
 COPY compass-net/ ./compass-net/
 
+# Reference genome download script
+COPY scripts/download_references.py ./scripts/download_references.py
+
 # Editable install (egg-link only, no downloads)
 RUN pip install --no-cache-dir --no-deps -e .
 
-# Build Bowtie2 index
-RUN bowtie2-build data/references/H37Rv.fasta data/references/H37Rv
+# Download reference genomes for all supported organisms
+RUN python scripts/download_references.py
+
+# Build Bowtie2 indices for all organisms
+RUN bowtie2-build data/references/H37Rv.fasta data/references/H37Rv && \
+    bowtie2-build data/references/ecoli_K12.fasta data/references/ecoli_K12 && \
+    bowtie2-build data/references/saureus_NCTC8325.fasta data/references/saureus_NCTC8325 && \
+    bowtie2-build data/references/ngono_FA1090.fasta data/references/ngono_FA1090
 
 RUN mkdir -p results/api results/panels results/validation
 

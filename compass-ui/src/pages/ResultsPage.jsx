@@ -26,7 +26,7 @@ import {
   getResults, exportResults, getFigureUrl, getTopK, getUmapData, getPoolData,
   getPresets, getDiagnostics, getWHOCompliance, runSweep, runPareto,
   compareScorers, getThermoProfile, getThermoStandalone, getAblation,
-  getNucleaseProfiles, getNucleaseComparison, getEnzymes, listJobs,
+  getNucleaseProfiles, getNucleaseComparison, getEnzymes, listJobs, getJob,
 } from "../api";
 import { transformApiCandidate } from "../utils/api";
 import ChipRender3D from "../ChipRender3D";
@@ -5513,6 +5513,7 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef(null);
   const [orgId, setOrgId] = useState("mtb");
+  const [jobError, setJobError] = useState(null);
 
   /* Sync activeJob when jobId prop changes (e.g. navigating from pipeline) */
   useEffect(() => {
@@ -5530,13 +5531,25 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
   /* Load results for active job */
   useEffect(() => {
     if (!activeJob) return;
+    setJobError(null);
     if (connected) {
       setLoading(true);
-      getResults(activeJob).then(({ data }) => {
+      getResults(activeJob).then(({ data, error }) => {
         if (data?.targets) {
           setResults(data.targets.map(transformApiCandidate));
         } else if (data?.candidates) {
           setResults(data.candidates.map(transformApiCandidate));
+        } else {
+          // Results not available — check job status for error details
+          getJob(activeJob).then(({ data: job }) => {
+            if (job?.status === "failed" && job?.error) {
+              setJobError(job.error);
+            } else if (error) {
+              setJobError(typeof error === "string" ? error : "Failed to load results");
+            }
+          }).catch(() => {
+            if (error) setJobError(typeof error === "string" ? error : "Failed to load results");
+          });
         }
         setPanelData({
           primer_dimer_matrix: data?.primer_dimer_matrix || null,
@@ -5663,14 +5676,29 @@ const ResultsPage = ({ connected, jobId, scorer: scorerProp, goTo }) => {
 
       {!loading && !hasResults && (
         <div style={{ textAlign: "center", padding: mobile ? "48px 24px" : "80px 24px" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "4px", background: T.bgSub, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-            <BarChart3 size={28} color={T.textTer} strokeWidth={1.5} />
-          </div>
-          <div style={{ fontSize: "18px", fontWeight: 600, color: T.text, fontFamily: HEADING, marginBottom: "8px" }}>No pipeline results yet</div>
-          <p style={{ fontSize: "13px", color: T.textSec, lineHeight: 1.6, maxWidth: 420, margin: "0 auto 24px" }}>
-            Run the COMPASS pipeline from the Home page to design crRNA candidates. Results will appear here once the pipeline completes.
-          </p>
-          <Btn icon={Play} onClick={() => goTo("home")}>Launch Pipeline</Btn>
+          {jobError ? (
+            <>
+              <div style={{ width: 64, height: 64, borderRadius: "4px", background: "rgba(220,38,38,0.08)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
+                <AlertTriangle size={28} color={T.danger} strokeWidth={1.5} />
+              </div>
+              <div style={{ fontSize: "18px", fontWeight: 600, color: T.danger, fontFamily: HEADING, marginBottom: "8px" }}>Pipeline Failed</div>
+              <div style={{ fontSize: "13px", color: T.textSec, lineHeight: 1.6, maxWidth: 540, margin: "0 auto 16px", fontFamily: MONO, background: T.bgSub, border: `1px solid ${T.border}`, borderRadius: "4px", padding: "12px 16px", textAlign: "left" }}>
+                {jobError}
+              </div>
+              <Btn icon={Play} onClick={() => goTo("home")}>Back to Pipeline</Btn>
+            </>
+          ) : (
+            <>
+              <div style={{ width: 64, height: 64, borderRadius: "4px", background: T.bgSub, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
+                <BarChart3 size={28} color={T.textTer} strokeWidth={1.5} />
+              </div>
+              <div style={{ fontSize: "18px", fontWeight: 600, color: T.text, fontFamily: HEADING, marginBottom: "8px" }}>No pipeline results yet</div>
+              <p style={{ fontSize: "13px", color: T.textSec, lineHeight: 1.6, maxWidth: 420, margin: "0 auto 24px" }}>
+                Run the COMPASS pipeline from the Home page to design crRNA candidates. Results will appear here once the pipeline completes.
+              </p>
+              <Btn icon={Play} onClick={() => goTo("home")}>Launch Pipeline</Btn>
+            </>
+          )}
         </div>
       )}
 
