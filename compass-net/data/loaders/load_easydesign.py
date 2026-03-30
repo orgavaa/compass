@@ -83,23 +83,30 @@ def load_easydesign(
             sequences.append(seq_34)
             activities.append(act)
 
-    # Test data (45-nt context — extract 34 nt)
+    # Test data (45-nt context — extract 34 nt).
+    # CRITICAL: training sequences are 24nt + 10×N padding.  Test sequences
+    # must use the SAME representation so the CNN sees consistent input at
+    # positions 24-33.  We extract 24nt (PAM + 20 spacer) and N-pad, just
+    # like training.  This drops flanking context but prevents the train/test
+    # representation mismatch that causes catastrophic generalisation failure
+    # (val rho=0.54 but test rho=0.07 when test has real flanking bases).
     df_test = pd.read_excel(xlsx_path, sheet_name="Test data")
     test_sequences = []
     test_activities = []
     for _, row in df_test.iterrows():
         dna = str(row["DNA"]).upper()
-        if len(dna) < 34:
+        if len(dna) < 24:
             continue
 
         # Find TTTV PAM in the 45-nt context
         pam_pos = _find_pam(dna)
         if pam_pos is not None:
-            seq_34 = dna[pam_pos:pam_pos + 34]
-            if len(seq_34) < 34:
-                seq_34 = seq_34.ljust(34, "N")
+            core = dna[pam_pos:pam_pos + 24]
         else:
-            seq_34 = dna[:34]
+            core = dna[:24]
+
+        # Same format as training: 24nt core + 10×N padding
+        seq_34 = core[:24].ljust(34, "N")
 
         test_sequences.append(seq_34)
         test_activities.append(float(row["true value"]))

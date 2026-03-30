@@ -98,7 +98,7 @@ class CompassMlScorer(Scorer):
         heuristic_fallback: Optional[Scorer] = None,
         rnafm_cache_dir: Optional[str | Path] = None,
         calibration_path: Optional[str | Path] = None,
-        use_rlpa: bool = True,
+        use_rlpa: bool = False,  # Disabled: RLPA overfits in Phase 1 (efficiency-only, no mismatch signal)
         use_rnafm: bool = True,
         multitask: bool = False,
         device: str = "cpu",
