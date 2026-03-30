@@ -49,7 +49,11 @@ results/
 results/**
 *.json.bak
 
-# Bowtie2 index files (built from H37Rv.fasta via bowtie2-build)
+# Reference genomes (large, downloaded via scripts/download_references.py)
+data/references/*.fasta
+data/references/*.gff3
+
+# Bowtie2 index files (built from reference FASTA via bowtie2-build)
 data/references/*.bt2
 data/references/*.bt2l
 
@@ -89,3 +93,4 @@ htmlcov/
 # RNA-FM embedding cache
 narsil-net/data/embeddings/
 narsil-net/data/external/
+
